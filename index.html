@@ -3,73 +3,49 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>泰拉纪年巡旅</title>
+  <title>泰拉地图纪年</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <main class="app">
-    <header class="topbar">
-      <div>
-        <p class="kicker">Terra A Journey</p>
-        <h1>泰拉纪年巡旅</h1>
-      </div>
-      <div class="toolbar" aria-label="视图与筛选">
-        <button class="tool-button active" data-filter="all">全部</button>
-        <button class="tool-button" data-filter="war">战争</button>
-        <button class="tool-button" data-filter="state">国家</button>
-        <button class="tool-button" data-filter="culture">文化</button>
-        <button class="tool-button" data-filter="modern">近代</button>
-      </div>
-    </header>
+    <nav class="view-tabs" aria-label="视图">
+      <button class="tab active" data-view="map">地图</button>
+      <button class="tab" data-view="timeline">时间线</button>
+    </nav>
 
-    <section class="summary">
-      <div>
-        <span class="metric" id="eventCount">0</span>
-        <span class="label">个年表事件</span>
+    <section id="mapView" class="view active">
+      <div class="map-stage" aria-label="泰拉地区地图">
+        <canvas id="terraCanvas" width="1880" height="731" aria-label="泰拉六边形地区地图"></canvas>
       </div>
-      <div>
-        <span class="metric">797-1099</span>
-        <span class="label">泰拉历范围</span>
-      </div>
-      <div>
-        <span class="metric" id="regionCount">0</span>
-        <span class="label">个地点/地区</span>
-      </div>
+      <aside class="region-panel">
+        <div class="panel-title">
+          <div>
+            <p class="kicker">Region Timeline</p>
+            <h2 id="regionTitle">选择地区</h2>
+          </div>
+          <button id="clearRegion" class="icon-button" title="关闭" aria-label="关闭">×</button>
+        </div>
+        <div id="regionTimeline" class="timeline compact"></div>
+      </aside>
     </section>
 
-    <section class="workspace">
-      <section class="timeline-panel" aria-label="时间线">
-        <div class="panel-title">
-          <h2>时间线</h2>
-          <input id="searchInput" type="search" placeholder="搜索年份、地点或事件">
+    <section id="timelineView" class="view">
+      <section class="timeline-panel" aria-label="总时间线">
+        <div class="panel-title timeline-tools">
+          <div>
+            <p class="kicker">Chronology</p>
+            <h2>泰拉纪年</h2>
+          </div>
+          <input id="searchInput" type="search" placeholder="搜索年份、地区或事件">
+          <div class="toolbar" aria-label="筛选">
+            <button class="tool-button active" data-filter="all">全部</button>
+            <button class="tool-button" data-filter="war">战争</button>
+            <button class="tool-button" data-filter="state">国家</button>
+            <button class="tool-button" data-filter="culture">文化</button>
+            <button class="tool-button" data-filter="modern">近代</button>
+          </div>
         </div>
         <div class="timeline" id="timeline"></div>
-      </section>
-
-      <section class="map-panel" aria-label="地图">
-        <div class="panel-title">
-          <h2>地图</h2>
-          <span id="activePlace">选择一个事件</span>
-        </div>
-        <div class="map-wrap">
-          <svg id="terraMap" viewBox="0 0 1000 640" role="img" aria-label="泰拉事件地图">
-            <defs>
-              <filter id="paper">
-                <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="8"></feTurbulence>
-                <feColorMatrix type="saturate" values="0.28"></feColorMatrix>
-                <feBlend mode="multiply" in2="SourceGraphic"></feBlend>
-              </filter>
-            </defs>
-            <rect width="1000" height="640" class="map-bg"></rect>
-            <path class="land north" d="M102 170 C170 90 282 83 351 144 C430 102 508 133 552 195 C633 167 746 182 820 262 C899 348 852 459 752 486 C665 565 526 530 461 471 C380 533 232 504 185 414 C91 378 54 248 102 170Z"></path>
-            <path class="land south" d="M207 462 C282 420 364 442 423 506 C482 474 596 475 655 537 C597 605 431 621 323 585 C246 559 189 515 207 462Z"></path>
-            <path class="route" id="routePath"></path>
-            <g id="mapMarkers"></g>
-          </svg>
-        </div>
-        <article class="detail" id="detail">
-          <p class="empty">点击时间线或地图上的标记，查看该时间、地点发生的事。</p>
-        </article>
       </section>
     </section>
   </main>

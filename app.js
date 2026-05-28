@@ -55,6 +55,7 @@ const baseCanvas = document.createElement("canvas");
 baseCanvas.width = canvas.width;
 baseCanvas.height = canvas.height;
 const baseCtx = baseCanvas.getContext("2d");
+const mapCache = new Map();
 const regionPanel = document.querySelector(".region-panel");
 const timeline = document.querySelector("#timeline");
 const regionTimeline = document.querySelector("#regionTimeline");
@@ -65,44 +66,171 @@ const tabs = document.querySelectorAll("[data-view]");
 const views = document.querySelectorAll(".view");
 const clearRegion = document.querySelector("#clearRegion");
 
-const hex = { w: 14.4, h: 8.2, stepX: 21.5, stepY: 12.4, depth: 20 };
+const hex = { w: 11.6, h: 6.6, stepX: 17.2, stepY: 9.9, depth: 18 };
+const referenceMapSrc = "map.png";
+const referenceMapOffset = { x: 0, y: 0 };
+const iconBaseUrl = "https://arknights.fandom.com/wiki/Special:Redirect/file/";
+const regionIconFiles = {
+  bolivar: "Bolívar.png",
+  columbia: "Columbia.png",
+  sargon: "Sargon.png",
+  minos: "Minos.png",
+  siesta: "Siesta.png",
+  sami: "Sami.png",
+  kjerag: "Kjerag.png",
+  kazimierz: "Kazimierz.png",
+  victoria: "Victoria.png",
+  leithanien: "Leithanien.png",
+  laterano: "Laterano.png",
+  iberia: "Iberia.png",
+  ursus: "Ursus.png",
+  chernobog: "Ursus.png",
+  lungmen: "Lungmen.png",
+  kazdel: "Kazdel.png",
+  siracusa: "Siracusa.png",
+  rim: "Rim Billiton.png",
+  yan: "Yan.png",
+  higashi: "Higashi.png",
+};
+const regionIcons = new Map();
+const displayRegionColors = {
+  bolivar: "#7f969f",
+  columbia: "#cbe6ed",
+  sargon: "#54b86f",
+  minos: "#d9eee5",
+  siesta: "#d7e4f2",
+  sami: "#56aee1",
+  kjerag: "#dbe9ef",
+  kazimierz: "#e7d858",
+  victoria: "#e88924",
+  leithanien: "#8f48c7",
+  laterano: "#e9e0c7",
+  iberia: "#cbd84a",
+  ursus: "#c93a3c",
+  chernobog: "#bd3035",
+  lungmen: "#d9b235",
+  kazdel: "#cad8dd",
+  siracusa: "#8cc461",
+  rim: "#946754",
+  yan: "#e2a832",
+  higashi: "#279995",
+};
+const referencePalette = [
+  { key: "sargon", rgb: [98, 189, 103], threshold: 82 },
+  { key: "sami", rgb: [98, 181, 239], threshold: 82 },
+  { key: "kazimierz", rgb: [248, 230, 74], threshold: 92 },
+  { key: "victoria", rgb: [255, 158, 26], threshold: 82 },
+  { key: "leithanien", rgb: [168, 61, 214], threshold: 86 },
+  { key: "iberia", rgb: [220, 230, 69], threshold: 92 },
+  { key: "ursus", rgb: [221, 43, 47], threshold: 82 },
+  { key: "lungmen", rgb: [255, 208, 50], threshold: 82 },
+  { key: "siracusa", rgb: [166, 215, 104], threshold: 82 },
+  { key: "rim", rgb: [157, 116, 97], threshold: 74 },
+  { key: "yan", rgb: [255, 196, 41], threshold: 86 },
+  { key: "higashi", rgb: [42, 178, 173], threshold: 84 },
+];
+const referenceBounds = {
+  sargon: [0, 260, 760, 650],
+  sami: [600, 30, 900, 185],
+  kazimierz: [690, 80, 1135, 285],
+  victoria: [660, 230, 1135, 500],
+  leithanien: [915, 185, 1335, 410],
+  iberia: [830, 415, 1370, 710],
+  ursus: [900, 0, 1560, 280],
+  lungmen: [1260, 78, 1480, 225],
+  siracusa: [1080, 245, 1425, 480],
+  rim: [1200, 320, 1680, 630],
+  yan: [1360, 80, 1885, 390],
+  higashi: [1470, 20, 1810, 200],
+};
 const regionScale = {
-  sargon: 0.5,
-  yan: 0.52,
-  iberia: 0.54,
-  victoria: 0.58,
+  sargon: 0.7,
+  yan: 0.68,
+  iberia: 0.68,
+  victoria: 0.7,
   ursus: 0.82,
-  columbia: 0.62,
-  kazdel: 0.62,
-  kazimierz: 0.64,
-  leithanien: 0.64,
-  rim: 0.64,
+  columbia: 0.68,
+  kazdel: 0.66,
+  kazimierz: 0.7,
+  leithanien: 0.66,
+  rim: 0.66,
   bolivar: 0.66,
-  laterano: 0.66,
-  siracusa: 0.66,
-  kjerag: 0.68,
-  minos: 0.68,
-  siesta: 0.68,
+  laterano: 0.62,
+  siracusa: 0.64,
+  kjerag: 0.62,
+  minos: 0.6,
+  siesta: 0.6,
   sami: 0.74,
   higashi: 0.74,
   chernobog: 0.8,
   lungmen: 0.8,
 };
+const regionTexture = {
+  bolivar: { spread: 0.06, hole: 0.04, island: 0.08, seed: 1 },
+  columbia: { spread: 0.08, hole: 0.05, island: 0.1, seed: 2 },
+  sargon: { spread: 0.18, hole: 0.12, island: 0.18, seed: 3 },
+  minos: { spread: 0.06, hole: 0.03, island: 0.08, seed: 4 },
+  siesta: { spread: 0.08, hole: 0.04, island: 0.1, seed: 5 },
+  sami: { spread: 0.08, hole: 0.05, island: 0.1, seed: 6 },
+  kjerag: { spread: 0.08, hole: 0.04, island: 0.1, seed: 7 },
+  kazimierz: { spread: 0.12, hole: 0.08, island: 0.14, seed: 8 },
+  victoria: { spread: 0.16, hole: 0.08, island: 0.16, seed: 9 },
+  leithanien: { spread: 0.1, hole: 0.06, island: 0.12, seed: 10 },
+  laterano: { spread: 0.08, hole: 0.04, island: 0.08, seed: 11 },
+  iberia: { spread: 0.16, hole: 0.1, island: 0.16, seed: 12 },
+  ursus: { spread: 0.1, hole: 0.08, island: 0.14, seed: 13 },
+  chernobog: { spread: 0.04, hole: 0, island: 0, seed: 14 },
+  lungmen: { spread: 0.04, hole: 0, island: 0, seed: 15 },
+  kazdel: { spread: 0.1, hole: 0.06, island: 0.12, seed: 16 },
+  siracusa: { spread: 0.08, hole: 0.04, island: 0.1, seed: 17 },
+  rim: { spread: 0.14, hole: 0.08, island: 0.14, seed: 18 },
+  yan: { spread: 0.16, hole: 0.08, island: 0.16, seed: 19 },
+  higashi: { spread: 0.08, hole: 0.04, island: 0.1, seed: 20 },
+};
 const regionShapes = regions.map((region) => {
   const polygon = parsePoints(region.points);
+  const scale = regionScale[region.key] ?? 0.74;
+  const texture = regionTexture[region.key] || {};
   return {
     ...region,
     polygon,
-    tilePolygon: scalePolygon(polygon, regionScale[region.key] ?? 0.74),
+    center: polygonCenter(polygon),
+    tilePolygon: scalePolygon(polygon, scale),
+    scatterPolygon: scalePolygon(polygon, Math.min(0.98, scale + (texture.spread ?? 0.08))),
   };
 });
-const labelPositions = Object.fromEntries(regionShapes.map((region) => [region.key, polygonCenter(region.polygon)]));
+const regionByKey = new Map(regionShapes.map((region) => [region.key, region]));
+const labelPositionOverrides = {
+  bolivar: [330, 176],
+  columbia: [600, 200],
+  sargon: [330, 432],
+  minos: [575, 348],
+  siesta: [750, 370],
+  sami: [742, 50],
+  kjerag: [770, 226],
+  kazimierz: [862, 154],
+  victoria: [900, 296],
+  leithanien: [1092, 246],
+  laterano: [1134, 360],
+  iberia: [1124, 502],
+  ursus: [1245, 104],
+  chernobog: [1238, 138],
+  lungmen: [1375, 138],
+  kazdel: [1328, 220],
+  siracusa: [1264, 276],
+  rim: [1410, 350],
+  yan: [1630, 184],
+  higashi: [1640, 66],
+};
+const labelPositions = Object.fromEntries(regionShapes.map((region) => [
+  region.key,
+  labelPositionOverrides[region.key] || polygonCenter(region.polygon),
+]));
 let activeRegion = null;
 let activeFilter = "all";
-let hitTiles = [];
 let hoverRegion = null;
 let baseReady = false;
-let timeStart = performance.now();
+let pendingMapFrame = null;
 
 function parsePoints(points) {
   return points.split(" ").map((pair) => pair.split(",").map(Number));
@@ -135,10 +263,11 @@ function inLand(x, y) {
   const main = ((x - 910) / 900) ** 2 + ((y - 310) / 245) ** 2 < 1;
   const west = ((x - 360) / 380) ** 2 + ((y - 370) / 220) ** 2 < 1;
   const east = ((x - 1560) / 350) ** 2 + ((y - 280) / 180) ** 2 < 1;
-  const south = ((x - 1060) / 340) ** 2 + ((y - 560) / 170) ** 2 < 1;
+  const south = ((x - 1060) / 335) ** 2 + ((y - 560) / 158) ** 2 < 1;
+  const southEastShelf = ((x - 1260) / 190) ** 2 + ((y - 585) / 88) ** 2 < 1;
   const northBite = ((x - 505) / 210) ** 2 + ((y - 125) / 80) ** 2 < 1;
-  const eastBite = ((x - 1540) / 280) ** 2 + ((y - 540) / 115) ** 2 < 1;
-  return (main || west || east || south) && !northBite && !eastBite;
+  const eastBite = ((x - 1545) / 250) ** 2 + ((y - 535) / 110) ** 2 < 1;
+  return (main || west || east || south || southEastShelf) && !northBite && !eastBite;
 }
 
 function hexPoints(cx, cy, grow = 0) {
@@ -177,137 +306,688 @@ function shade(color, amount) {
   return `rgb(${next.join(",")})`;
 }
 
-function tilePath(points) {
-  const path = new Path2D();
-  points.forEach(([x, y], index) => {
-    if (index === 0) path.moveTo(x, y);
-    else path.lineTo(x, y);
+function blendColor(color, target, targetWeight) {
+  const sourceRaw = color.replace("#", "");
+  const targetRaw = target.replace("#", "");
+  const values = [0, 2, 4].map((start) => {
+    const source = parseInt(sourceRaw.slice(start, start + 2), 16);
+    const next = parseInt(targetRaw.slice(start, start + 2), 16);
+    return Math.round(source * (1 - targetWeight) + next * targetWeight);
   });
-  path.closePath();
-  return path;
+  return `#${values.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function colorDistance(rgb, targetRgb) {
+  return Math.hypot(rgb[0] - targetRgb[0], rgb[1] - targetRgb[1], rgb[2] - targetRgb[2]);
+}
+
+function displayColorFor(region) {
+  return displayRegionColors[region.key] || region.color;
+}
+
+function colorChroma(rgb) {
+  return Math.max(...rgb) - Math.min(...rgb);
+}
+
+function inReferenceBounds(key, x, y) {
+  const bounds = referenceBounds[key];
+  if (!bounds) return true;
+  return x >= bounds[0] && y >= bounds[1] && x <= bounds[2] && y <= bounds[3];
+}
+
+function classifyReferenceColor(rgb, x, y) {
+  if (rgb[0] + rgb[1] + rgb[2] < 82 || colorChroma(rgb) < 34) return null;
+  const match = referencePalette
+    .map((item) => ({ ...item, distance: colorDistance(rgb, item.rgb) }))
+    .sort((a, b) => a.distance - b.distance)[0];
+  return match && match.distance < match.threshold && inReferenceBounds(match.key, x, y) ? match.key : null;
+}
+
+function isReferenceTerrainPixel(rgb, x, y) {
+  if (classifyReferenceColor(rgb, x, y)) return true;
+  const brightness = (rgb[0] + rgb[1] + rgb[2]) / 3;
+  const chroma = colorChroma(rgb);
+  const neutralTop = brightness > 175 && chroma < 72;
+  const greyTop = brightness > 122 && brightness < 205 && chroma < 30;
+  const brightEdge = brightness > 205 && chroma < 92;
+  return neutralTop || greyTop || brightEdge;
+}
+
+function tileNoise(row, col, seed) {
+  const value = Math.sin(row * 12.9898 + col * 78.233 + seed * 37.719) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function selectRegionTile(tile, region) {
+  const texture = regionTexture[region.key] || {};
+  const insideCore = pointInPolygon(tile.x, tile.y, region.tilePolygon);
+  const seed = texture.seed ?? 0;
+  const noise = tileNoise(tile.row, tile.col, seed);
+  const coarseNoise = tileNoise(Math.floor(tile.row / 2), Math.floor(tile.col / 2), seed + 29);
+  const labelGuard = Math.hypot(tile.x - region.center[0], tile.y - region.center[1]) < 44;
+  if (insideCore) {
+    return labelGuard || coarseNoise * 0.68 + noise * 0.32 > (texture.hole ?? 0.04);
+  }
+  return pointInPolygon(tile.x, tile.y, region.scatterPolygon) && coarseNoise > 1 - (texture.island ?? 0.08);
+}
+
+function iconForRegion(region) {
+  return regionIcons.get(region.key) || null;
+}
+
+function drawFallbackIcon(target, x, y, size, color) {
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  const radius = size / 2;
+  target.save();
+  target.shadowColor = "rgba(0,0,0,0.55)";
+  target.shadowBlur = 3;
+  target.lineWidth = Math.max(2, size * 0.14);
+  target.strokeStyle = "#071017";
+  target.fillStyle = color;
+  target.beginPath();
+  target.moveTo(cx, cy - radius);
+  target.lineTo(cx + radius * 0.82, cy - radius * 0.28);
+  target.lineTo(cx + radius * 0.62, cy + radius * 0.86);
+  target.lineTo(cx - radius * 0.62, cy + radius * 0.86);
+  target.lineTo(cx - radius * 0.82, cy - radius * 0.28);
+  target.closePath();
+  target.fill();
+  target.stroke();
+  target.restore();
+}
+
+function drawCrownSymbol(target, cx, cy, size) {
+  const r = size / 2;
+  target.beginPath();
+  target.moveTo(cx - r * 0.55, cy + r * 0.26);
+  target.lineTo(cx - r * 0.48, cy - r * 0.22);
+  target.lineTo(cx - r * 0.16, cy + r * 0.02);
+  target.lineTo(cx, cy - r * 0.36);
+  target.lineTo(cx + r * 0.16, cy + r * 0.02);
+  target.lineTo(cx + r * 0.48, cy - r * 0.22);
+  target.lineTo(cx + r * 0.55, cy + r * 0.26);
+  target.closePath();
+  target.stroke();
+}
+
+function drawFlameSymbol(target, cx, cy, size) {
+  const r = size / 2;
+  target.beginPath();
+  target.moveTo(cx, cy - r * 0.52);
+  target.bezierCurveTo(cx + r * 0.52, cy - r * 0.1, cx + r * 0.36, cy + r * 0.44, cx, cy + r * 0.52);
+  target.bezierCurveTo(cx - r * 0.44, cy + r * 0.28, cx - r * 0.32, cy - r * 0.08, cx, cy - r * 0.52);
+  target.closePath();
+  target.stroke();
+  target.beginPath();
+  target.moveTo(cx - r * 0.08, cy + r * 0.34);
+  target.bezierCurveTo(cx + r * 0.18, cy + r * 0.08, cx + r * 0.08, cy - r * 0.08, cx + r * 0.02, cy - r * 0.22);
+  target.stroke();
+}
+
+function drawMountainSymbol(target, cx, cy, size) {
+  const r = size / 2;
+  target.beginPath();
+  target.moveTo(cx - r * 0.62, cy + r * 0.38);
+  target.lineTo(cx - r * 0.24, cy - r * 0.28);
+  target.lineTo(cx + r * 0.02, cy + r * 0.08);
+  target.lineTo(cx + r * 0.28, cy - r * 0.42);
+  target.lineTo(cx + r * 0.62, cy + r * 0.38);
+  target.stroke();
+}
+
+function drawTowerSymbol(target, cx, cy, size) {
+  const r = size / 2;
+  target.strokeRect(cx - r * 0.25, cy - r * 0.36, r * 0.5, r * 0.74);
+  target.beginPath();
+  target.moveTo(cx - r * 0.42, cy - r * 0.36);
+  target.lineTo(cx, cy - r * 0.6);
+  target.lineTo(cx + r * 0.42, cy - r * 0.36);
+  target.stroke();
+  target.beginPath();
+  target.moveTo(cx - r * 0.12, cy + r * 0.38);
+  target.lineTo(cx - r * 0.12, cy + r * 0.05);
+  target.lineTo(cx + r * 0.12, cy + r * 0.05);
+  target.lineTo(cx + r * 0.12, cy + r * 0.38);
+  target.stroke();
+}
+
+function drawHornSymbol(target, cx, cy, size) {
+  const r = size / 2;
+  target.beginPath();
+  target.moveTo(cx - r * 0.44, cy - r * 0.24);
+  target.quadraticCurveTo(cx - r * 0.56, cy + r * 0.08, cx - r * 0.2, cy + r * 0.22);
+  target.moveTo(cx + r * 0.44, cy - r * 0.24);
+  target.quadraticCurveTo(cx + r * 0.56, cy + r * 0.08, cx + r * 0.2, cy + r * 0.22);
+  target.moveTo(cx - r * 0.26, cy + r * 0.24);
+  target.lineTo(cx + r * 0.26, cy + r * 0.24);
+  target.stroke();
+}
+
+function drawWingSymbol(target, cx, cy, size) {
+  const r = size / 2;
+  target.beginPath();
+  target.arc(cx, cy, r * 0.22, 0, Math.PI * 2);
+  target.moveTo(cx - r * 0.18, cy + r * 0.06);
+  target.quadraticCurveTo(cx - r * 0.55, cy - r * 0.1, cx - r * 0.64, cy - r * 0.42);
+  target.moveTo(cx + r * 0.18, cy + r * 0.06);
+  target.quadraticCurveTo(cx + r * 0.55, cy - r * 0.1, cx + r * 0.64, cy - r * 0.42);
+  target.stroke();
+}
+
+function drawPickSymbol(target, cx, cy, size) {
+  const r = size / 2;
+  target.beginPath();
+  target.moveTo(cx - r * 0.44, cy - r * 0.32);
+  target.quadraticCurveTo(cx + r * 0.1, cy - r * 0.56, cx + r * 0.54, cy - r * 0.14);
+  target.moveTo(cx + r * 0.12, cy - r * 0.18);
+  target.lineTo(cx - r * 0.26, cy + r * 0.44);
+  target.stroke();
+}
+
+function drawLeafSymbol(target, cx, cy, size) {
+  const r = size / 2;
+  target.beginPath();
+  target.ellipse(cx, cy, r * 0.38, r * 0.58, -0.75, 0, Math.PI * 2);
+  target.moveTo(cx - r * 0.2, cy + r * 0.28);
+  target.lineTo(cx + r * 0.26, cy - r * 0.3);
+  target.stroke();
+}
+
+function drawWaveSymbol(target, cx, cy, size) {
+  const r = size / 2;
+  target.beginPath();
+  target.moveTo(cx - r * 0.55, cy + r * 0.08);
+  target.bezierCurveTo(cx - r * 0.22, cy - r * 0.28, cx + r * 0.1, cy + r * 0.42, cx + r * 0.54, cy - r * 0.04);
+  target.moveTo(cx - r * 0.46, cy + r * 0.34);
+  target.lineTo(cx + r * 0.45, cy + r * 0.34);
+  target.stroke();
+}
+
+function drawRingSymbol(target, cx, cy, size) {
+  const r = size / 2;
+  target.beginPath();
+  target.arc(cx, cy - r * 0.12, r * 0.38, 0, Math.PI * 2);
+  target.moveTo(cx, cy - r * 0.5);
+  target.lineTo(cx, cy + r * 0.46);
+  target.moveTo(cx - r * 0.34, cy + r * 0.12);
+  target.lineTo(cx + r * 0.34, cy + r * 0.12);
+  target.stroke();
+}
+
+function drawShieldSymbol(target, cx, cy, size) {
+  const r = size / 2;
+  target.beginPath();
+  target.moveTo(cx, cy - r * 0.54);
+  target.lineTo(cx + r * 0.46, cy - r * 0.22);
+  target.lineTo(cx + r * 0.32, cy + r * 0.34);
+  target.lineTo(cx, cy + r * 0.56);
+  target.lineTo(cx - r * 0.32, cy + r * 0.34);
+  target.lineTo(cx - r * 0.46, cy - r * 0.22);
+  target.closePath();
+  target.stroke();
+  target.beginPath();
+  target.moveTo(cx, cy - r * 0.32);
+  target.lineTo(cx, cy + r * 0.3);
+  target.stroke();
+}
+
+function drawFactionSymbol(target, region, cx, cy, size) {
+  const key = region.key;
+  if (key === "yan" || key === "lungmen") drawFlameSymbol(target, cx, cy, size);
+  else if (key === "victoria") drawCrownSymbol(target, cx, cy, size);
+  else if (key === "sami" || key === "kjerag") drawMountainSymbol(target, cx, cy, size);
+  else if (key === "laterano" || key === "columbia") drawWingSymbol(target, cx, cy, size);
+  else if (key === "rim") drawPickSymbol(target, cx, cy, size);
+  else if (key === "sargon" || key === "siracusa") drawLeafSymbol(target, cx, cy, size);
+  else if (key === "iberia" || key === "siesta") drawWaveSymbol(target, cx, cy, size);
+  else if (key === "kazimierz" || key === "bolivar") drawShieldSymbol(target, cx, cy, size);
+  else if (key === "ursus" || key === "chernobog" || key === "higashi") drawTowerSymbol(target, cx, cy, size);
+  else if (key === "kazdel" || key === "minos") drawHornSymbol(target, cx, cy, size);
+  else if (key === "leithanien") drawRingSymbol(target, cx, cy, size);
+  else drawShieldSymbol(target, cx, cy, size);
+}
+
+function drawLocalFactionIcon(target, region, x, y, size) {
+  const color = displayColorFor(region);
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  drawFallbackIcon(target, x, y, size, color);
+  target.save();
+  target.lineCap = "round";
+  target.lineJoin = "round";
+  target.lineWidth = Math.max(1.4, size * 0.1);
+  target.strokeStyle = "rgba(5, 12, 18, 0.72)";
+  drawFactionSymbol(target, region, cx + size * 0.03, cy + size * 0.06, size);
+  target.strokeStyle = "#f8fdff";
+  target.lineWidth = Math.max(1.05, size * 0.075);
+  drawFactionSymbol(target, region, cx, cy, size);
+  target.restore();
+}
+
+function drawLabelIcon(target, region, labelX, labelY, labelWidth, cityLabel) {
+  const size = cityLabel ? 15 : 23;
+  const gap = cityLabel ? 5 : 7;
+  const iconX = labelX - labelWidth / 2 - size - gap;
+  const iconY = labelY - size / 2;
+  drawLocalFactionIcon(target, region, iconX, iconY, size);
+}
+
+function loadRegionIcons() {
+  regionIcons.clear();
+}
+
+function sampleReferenceRegion(referenceCtx, image, tile) {
+  const sampleX = tile.x * (image.width / canvas.width) + referenceMapOffset.x;
+  const sampleY = tile.y + referenceMapOffset.y;
+  const offsets = [
+    [0, 0],
+    [-hex.w * 0.44, 0],
+    [hex.w * 0.44, 0],
+    [0, -hex.h * 0.44],
+    [0, hex.h * 0.44],
+    [-hex.w * 0.28, -hex.h * 0.26],
+    [hex.w * 0.28, -hex.h * 0.26],
+    [-hex.w * 0.28, hex.h * 0.26],
+    [hex.w * 0.28, hex.h * 0.26],
+  ];
+  const votes = new Map();
+  offsets.forEach(([offsetX, offsetY]) => {
+    const x = Math.round(Math.max(0, Math.min(image.width - 1, sampleX + offsetX)));
+    const y = Math.round(Math.max(0, Math.min(image.height - 1, sampleY + offsetY)));
+    const pixel = referenceCtx.getImageData(x, y, 1, 1).data;
+    const key = classifyReferenceColor([pixel[0], pixel[1], pixel[2]], x, y);
+    if (key) votes.set(key, (votes.get(key) || 0) + 1);
+  });
+  return [...votes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+}
+
+function sampleReferenceLand(referenceCtx, image, tile) {
+  const sampleX = tile.x * (image.width / canvas.width) + referenceMapOffset.x;
+  const sampleY = tile.y + referenceMapOffset.y;
+  const offsets = [
+    [0, 0],
+    [-hex.w * 0.5, 0],
+    [hex.w * 0.5, 0],
+    [0, -hex.h * 0.5],
+    [0, hex.h * 0.5],
+    [-hex.w * 0.35, -hex.h * 0.32],
+    [hex.w * 0.35, -hex.h * 0.32],
+    [-hex.w * 0.35, hex.h * 0.32],
+    [hex.w * 0.35, hex.h * 0.32],
+  ];
+  const hits = offsets.filter(([offsetX, offsetY]) => {
+    const x = Math.round(Math.max(0, Math.min(image.width - 1, sampleX + offsetX)));
+    const y = Math.round(Math.max(0, Math.min(image.height - 1, sampleY + offsetY)));
+    const pixel = referenceCtx.getImageData(x, y, 1, 1).data;
+    return isReferenceTerrainPixel([pixel[0], pixel[1], pixel[2]], x, y);
+  }).length;
+  return hits >= 4;
+}
+
+function buildReferenceLandTiles(referenceCtx, image) {
+  const tiles = [];
+  const rows = Math.ceil(canvas.height / hex.stepY) + 3;
+  const cols = Math.ceil(canvas.width / hex.stepX) + 3;
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const [x, y] = tileCenter(row, col);
+      if (sampleReferenceLand(referenceCtx, image, { x, y, row, col })) tiles.push({ x, y, row, col });
+    }
+  }
+  return tiles;
+}
+
+function largestConnectedTileGroup(tiles) {
+  const tileMap = new Map(tiles.map((tile) => [tileKey(tile.row, tile.col), tile]));
+  const visited = new Set();
+  let largest = [];
+  tileMap.forEach((tile, key) => {
+    if (visited.has(key)) return;
+    const group = [];
+    const queue = [tile];
+    visited.add(key);
+    for (let index = 0; index < queue.length; index += 1) {
+      const current = queue[index];
+      group.push(current);
+      neighborCoords(current.row, current.col).forEach(([row, col]) => {
+        const nextKey = tileKey(row, col);
+        if (visited.has(nextKey) || !tileMap.has(nextKey)) return;
+        visited.add(nextKey);
+        queue.push(tileMap.get(nextKey));
+      });
+    }
+    if (group.length > largest.length) largest = group;
+  });
+  return largest;
+}
+
+function addWhiteBufferAroundRegions(tiles, tilesByRegion) {
+  const tileMap = new Map(tiles.map((tile) => [tileKey(tile.row, tile.col), tile]));
+  const regionKeys = new Set();
+  const frontier = [];
+  tilesByRegion.forEach((regionTileList) => {
+    regionTileList.forEach((tile) => {
+      const key = tileKey(tile.row, tile.col);
+      regionKeys.add(key);
+      frontier.push(tile);
+    });
+  });
+  for (let ring = 0; ring < 2; ring += 1) {
+    const additions = [];
+    frontier.forEach((tile) => {
+      neighborCoords(tile.row, tile.col).forEach(([row, col]) => {
+        const key = tileKey(row, col);
+        if (tileMap.has(key) || regionKeys.has(key)) return;
+        const [x, y] = tileCenter(row, col);
+        if (x < 18 || x > canvas.width - 18 || y < 36 || y > canvas.height - 34) return;
+        const nextTile = { x, y, row, col };
+        tileMap.set(key, nextTile);
+        additions.push(nextTile);
+      });
+    });
+    frontier.push(...additions);
+  }
+  return [...tileMap.values()];
+}
+
+function nearLandEdge(tile) {
+  return neighborCoords(tile.row, tile.col).some(([row, col]) => !landTileKeys.has(tileKey(row, col)));
+}
+
+function keepSampledRegionTile(key, tile) {
+  if (key === "sargon" && tile.y > 620 && nearLandEdge(tile)) return false;
+  return true;
+}
+
+function buildReferenceRegionTiles(referenceCtx, image) {
+  const sampledRegionKeys = new Set(referencePalette.map((item) => item.key));
+  const tilesByRegion = new Map(regionShapes.map((region) => [region.key, []]));
+  landTiles.forEach((tile) => {
+    const key = sampleReferenceRegion(referenceCtx, image, tile);
+    const region = key ? regionByKey.get(key) : null;
+    if (region && sampledRegionKeys.has(key) && keepSampledRegionTile(key, tile)) {
+      tilesByRegion.get(key).push(tile);
+    }
+  });
+  regionShapes.forEach((region) => {
+    const tiles = tilesByRegion.get(region.key);
+    if (!sampledRegionKeys.has(region.key) || tiles.length < 6) {
+      tilesByRegion.set(region.key, landTiles.filter((tile) => selectRegionTile(tile, region)));
+    }
+  });
+  return tilesByRegion;
+}
+
+function loadReferenceMap() {
+  const image = new Image();
+  image.decoding = "async";
+  image.onload = () => {
+    try {
+      const referenceCanvas = document.createElement("canvas");
+      referenceCanvas.width = image.width;
+      referenceCanvas.height = image.height;
+      const referenceCtx = referenceCanvas.getContext("2d", { willReadFrequently: true });
+      referenceCtx.drawImage(image, 0, 0);
+      landTiles = largestConnectedTileGroup(buildReferenceLandTiles(referenceCtx, image));
+      landTileKeys = new Set(landTiles.map((tile) => tileKey(tile.row, tile.col)));
+      regionTiles = buildReferenceRegionTiles(referenceCtx, image);
+      landTiles = addWhiteBufferAroundRegions(landTiles, regionTiles);
+      landTileKeys = new Set(landTiles.map((tile) => tileKey(tile.row, tile.col)));
+      perimeterTiles = buildPerimeterTiles();
+      tileStyles = buildTileStyles();
+      mapCache.clear();
+      scheduleRenderMap();
+    } catch (error) {
+      console.warn("map.png could not be used as a region mask; procedural map kept.", error);
+    }
+  };
+  image.src = referenceMapSrc;
 }
 
 function drawHexPrism(target, x, y, color, options = {}) {
-  const top = hexPoints(x, y, options.grow ?? 0);
+  const lift = options.lift ?? 0;
+  const topY = y - lift;
+  const top = hexPoints(x, topY, options.grow ?? 0);
   const bottom = top.map(([px, py]) => [px, py + (options.depth ?? hex.depth)]);
   drawPolygon(target, [top[3], top[4], bottom[4], bottom[3]], shade(color, -64));
   drawPolygon(target, [top[1], top[2], bottom[2], bottom[1]], shade(color, -42));
   drawPolygon(target, [top[2], top[3], bottom[3], bottom[2]], shade(color, -78));
-  drawPolygon(target, top, color, options.stroke ?? "rgba(40, 68, 80, 0.14)", options.strokeWidth ?? 0.35);
+  let topFill = color;
+  if (options.gradientTo) {
+    topFill = target.createLinearGradient(x - hex.w, topY - hex.h, x + hex.w, topY + hex.h);
+    topFill.addColorStop(0, blendColor(color, "#ffffff", 0.2));
+    topFill.addColorStop(0.48, color);
+    topFill.addColorStop(1, options.gradientTo);
+  }
+  target.save();
+  if (options.topAlpha !== undefined) target.globalAlpha *= options.topAlpha;
+  drawPolygon(target, top, topFill, options.stroke ?? "rgba(40, 68, 80, 0.14)", options.strokeWidth ?? 0.35);
   if (options.shine) {
-    drawPolygon(target, [top[0], top[1], [x + 3, y], top[5]], `rgba(255,255,255,${options.shine})`);
+    drawPolygon(target, [top[0], top[1], [x + 3, topY], top[5]], `rgba(255,255,255,${options.shine})`);
   }
-  if (options.key) {
-    hitTiles.push({ key: options.key, path: tilePath(top) });
-  }
+  target.restore();
 }
 
 function drawBackground(target) {
   target.fillStyle = "#547381";
   target.fillRect(0, 0, canvas.width, canvas.height);
-  target.fillStyle = "#0b131a";
-  target.font = "900 36px Arial, sans-serif";
-  target.fillText("PRTS", 84, 96);
-  target.font = "900 15px Arial, sans-serif";
-  target.fillText("SYNTHESIZE INFORMATION", 85, 122);
-  target.font = "500 24px Arial, sans-serif";
-  target.fillText("ANALYSIS  OS", 85, 148);
+}
+
+function tileCenter(row, col) {
+  return [
+    40 + col * hex.stepX + (row % 2 ? hex.stepX / 2 : 0),
+    72 + row * hex.stepY,
+  ];
 }
 
 function buildLandTiles() {
   const tiles = [];
-  const rows = 49;
-  const cols = 92;
+  const rows = Math.ceil(canvas.height / hex.stepY) + 3;
+  const cols = Math.ceil(canvas.width / hex.stepX) + 3;
   for (let row = 0; row < rows; row += 1) {
     for (let col = 0; col < cols; col += 1) {
-      const x = 40 + col * hex.stepX + (row % 2 ? hex.stepX / 2 : 0);
-      const y = 72 + row * hex.stepY;
+      const [x, y] = tileCenter(row, col);
       if (inLand(x, y)) tiles.push({ x, y, row, col });
     }
   }
   return tiles;
 }
 
-const landTiles = buildLandTiles();
-const regionTiles = new Map(regionShapes.map((region) => [
+let landTiles = buildLandTiles();
+let landTileKeys = new Set(landTiles.map((tile) => tileKey(tile.row, tile.col)));
+let perimeterTiles = buildPerimeterTiles();
+let regionTiles = new Map(regionShapes.map((region) => [
   region.key,
-  landTiles.filter((tile) => pointInPolygon(tile.x, tile.y, region.tilePolygon)),
+  landTiles.filter((tile) => selectRegionTile(tile, region)),
 ]));
+let tileStyles = buildTileStyles();
+
+function tileKey(row, col) {
+  return `${row}:${col}`;
+}
+
+function neighborCoords(row, col) {
+  const diagonalLeft = row % 2 === 0 ? col - 1 : col;
+  const diagonalRight = row % 2 === 0 ? col : col + 1;
+  return [
+    [row, col - 1],
+    [row, col + 1],
+    [row - 1, diagonalLeft],
+    [row - 1, diagonalRight],
+    [row + 1, diagonalLeft],
+    [row + 1, diagonalRight],
+  ];
+}
+
+function buildPerimeterTiles() {
+  const perimeter = new Map();
+  landTiles.forEach((tile) => {
+    neighborCoords(tile.row, tile.col).forEach(([row, col]) => {
+      const key = tileKey(row, col);
+      if (landTileKeys.has(key) || perimeter.has(key)) return;
+      const [x, y] = tileCenter(row, col);
+      const landNeighborCount = neighborCoords(row, col).filter(([nextRow, nextCol]) => landTileKeys.has(tileKey(nextRow, nextCol))).length;
+      if (landNeighborCount > 2) return;
+      if (x > -hex.stepX && x < canvas.width + hex.stepX && y > 20 && y < canvas.height + hex.stepY) {
+        perimeter.set(key, { x, y, row, col });
+      }
+    });
+  });
+  return [...perimeter.values()];
+}
+
+function buildTileStyles() {
+  const styles = new Map();
+  regionShapes.forEach((region) => {
+    (regionTiles.get(region.key) || []).forEach((tile) => {
+      const color = displayColorFor(region);
+      styles.set(tileKey(tile.row, tile.col), {
+        kind: "region",
+        regionKey: region.key,
+        color,
+        gradientTo: blendColor(color, "#eef8fb", 0.24),
+      });
+    });
+  });
+  return styles;
+}
 
 function renderBaseCache() {
   if (baseReady) return;
   baseCtx.clearRect(0, 0, baseCanvas.width, baseCanvas.height);
   drawBackground(baseCtx);
-  baseCtx.save();
-  baseCtx.shadowColor = "rgba(7, 20, 30, 0.46)";
-  baseCtx.shadowBlur = 28;
-  baseCtx.shadowOffsetX = 26;
-  baseCtx.shadowOffsetY = 40;
-  landTiles.forEach((tile) => {
-    const edge = !inLand(tile.x - hex.stepX, tile.y) || !inLand(tile.x + hex.stepX, tile.y) || !inLand(tile.x, tile.y + hex.stepY);
-    if (edge) drawHexPrism(baseCtx, tile.x, tile.y + 12, "#304855", { depth: 25, grow: 0.6, stroke: "rgba(8,16,22,0.22)" });
-  });
-  landTiles.forEach((tile) => {
-    const shine = 0.03 + ((tile.row + tile.col) % 4) * 0.028;
-    drawHexPrism(baseCtx, tile.x, tile.y, "#eef8fb", { depth: 24, grow: 0.65, shine, strokeWidth: 0.2 });
-  });
-  baseCtx.restore();
   baseReady = true;
 }
 
-function renderRegions(time = 0) {
-  hitTiles = [];
-  regionShapes.forEach((region) => {
-    const isActive = activeRegion === region.key || hoverRegion === region.key;
-    const pulse = isActive ? Math.sin(time * 0.006) * 2.2 : 0;
-    const tiles = regionTiles.get(region.key) || [];
-    tiles.forEach((tile) => {
-      ctx.save();
-      if (activeRegion && activeRegion !== region.key) ctx.globalAlpha = 0.42;
-      const shine = 0.045 + ((tile.row * 2 + tile.col) % 5) * 0.018;
-      drawHexPrism(ctx, tile.x, tile.y - 6 - pulse, region.color, {
-        depth: 26,
-        grow: 3.35,
-        shine,
-        key: region.key,
-        stroke: null,
-        strokeWidth: 0,
-      });
-      ctx.restore();
-    });
+function drawPerimeterTile(target, tile) {
+  const bottomFade = tile.y > canvas.height * 0.64
+    ? Math.max(0.04, 1 - (tile.y - canvas.height * 0.64) / 72) * 0.22
+    : 0.55;
+  target.save();
+  target.globalAlpha *= bottomFade;
+  target.shadowColor = "rgba(7, 20, 30, 0.3)";
+  target.shadowBlur = tile.y > canvas.height * 0.64 ? 5 : 10;
+  target.shadowOffsetX = 4;
+  target.shadowOffsetY = 7;
+  drawHexPrism(target, tile.x, tile.y, "#273d49", {
+    depth: 20,
+    grow: 0.08,
+    gradientTo: "#344f5e",
+    stroke: "rgba(8,16,22,0.18)",
+    strokeWidth: 0.2,
+  });
+  target.restore();
+}
+
+function drawLandTile(target, tile) {
+  const style = tileStyles.get(tileKey(tile.row, tile.col)) || {
+    kind: "background",
+    color: "#eef8fb",
+    gradientTo: "#ffffff",
+  };
+  const isActive = style.regionKey && activeRegion === style.regionKey;
+  const shineBase = style.kind === "background" ? 0.03 : 0.06;
+  const shine = shineBase + ((tile.row * 2 + tile.col) % 5) * 0.015;
+  const topAlpha = activeRegion && style.regionKey && activeRegion !== style.regionKey
+    ? 0.78
+    : 1;
+  const lift = style.kind === "region" ? 32 : 0;
+
+  target.save();
+  target.shadowColor = style.kind === "background" ? "rgba(8, 24, 32, 0.08)" : "rgba(8, 27, 38, 0.22)";
+  target.shadowBlur = isActive ? 16 : style.kind === "background" ? 2 : 11;
+  target.shadowOffsetX = style.kind === "background" ? 1 : 7;
+  target.shadowOffsetY = style.kind === "background" ? 2 : 9;
+  drawHexPrism(target, tile.x, tile.y, style.color, {
+    depth: style.kind === "region" ? 54 : 22,
+    lift,
+    grow: style.kind === "region" ? 1.15 : 0.48,
+    shine,
+    gradientTo: style.gradientTo,
+    topAlpha,
+    stroke: style.kind === "background" ? "rgba(40, 68, 80, 0.13)" : null,
+    strokeWidth: style.kind === "background" ? 0.2 : 0,
+  });
+  target.restore();
+}
+
+function renderTiles(target) {
+  const terrainTiles = [
+    ...landTiles.map((tile) => ({ ...tile, layer: "land" })),
+  ].sort((a, b) => a.y - b.y || a.x - b.x || (a.layer === "perimeter" ? 1 : -1));
+  terrainTiles.forEach((tile) => {
+    drawLandTile(target, tile);
   });
 }
 
-function drawLabels() {
+function drawLabels(target) {
   regionShapes.forEach((region) => {
     const [x, y] = labelPositions[region.key];
+    const cityLabel = region.key === "chernobog" || region.key === "lungmen";
+    const labelLift = cityLabel ? 28 : 32;
     const lines = region.name.includes(" / ") ? [region.name] : region.name.split("\n");
-    ctx.save();
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = region.key === "chernobog" || region.key === "lungmen" ? "900 15px Arial, sans-serif" : "900 27px Arial, sans-serif";
-    ctx.lineJoin = "round";
-    ctx.shadowColor = "rgba(0,0,0,0.5)";
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetY = 3;
+    target.save();
+    target.textAlign = "center";
+    target.textBaseline = "middle";
+    target.font = cityLabel ? "900 12px Arial, sans-serif" : "900 20px Arial, sans-serif";
+    target.lineJoin = "round";
+    target.shadowColor = "rgba(0,0,0,0.5)";
+    target.shadowBlur = 4;
+    target.shadowOffsetY = 3;
+    const labelWidth = Math.max(...lines.map((line) => target.measureText(line).width));
+    drawLabelIcon(target, region, x, y - labelLift, labelWidth, cityLabel);
     lines.forEach((line, index) => {
-      const lineY = y + index * 24;
-      ctx.strokeStyle = "#071017";
-      ctx.lineWidth = region.key === "chernobog" || region.key === "lungmen" ? 5 : 7;
-      ctx.strokeText(line, x, lineY);
-      ctx.fillStyle = "#ffffff";
-      ctx.fillText(line, x, lineY);
+      const lineY = y - labelLift + index * 20;
+      target.strokeStyle = "#071017";
+      target.lineWidth = cityLabel ? 4 : 5.4;
+      target.strokeText(line, x, lineY);
+      target.fillStyle = "#ffffff";
+      target.fillText(line, x, lineY);
     });
-    ctx.restore();
+    target.restore();
   });
 }
 
-function renderMap(time = performance.now()) {
+function buildMapCache() {
+  const previousRegion = activeRegion;
+  activeRegion = null;
+  const cachedCanvas = document.createElement("canvas");
+  cachedCanvas.width = canvas.width;
+  cachedCanvas.height = canvas.height;
+  const cachedCtx = cachedCanvas.getContext("2d");
+  cachedCtx.drawImage(baseCanvas, 0, 0);
+  renderTiles(cachedCtx);
+  activeRegion = previousRegion;
+  mapCache.set("all", cachedCanvas);
+}
+
+function drawSelectionOverlay(target) {
+  if (!activeRegion) return;
+  landTiles.forEach((tile) => {
+    const style = tileStyles.get(tileKey(tile.row, tile.col));
+    if (!style?.regionKey || style.regionKey === activeRegion) return;
+    const top = hexPoints(tile.x, tile.y - 32, 1.15);
+    const alpha = 0.28;
+    drawPolygon(target, top, `rgba(238,248,251,${alpha})`);
+  });
+}
+
+function renderMap() {
   renderBaseCache();
+  if (!mapCache.has("all")) buildMapCache();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(baseCanvas, 0, 0);
-  renderRegions(time);
-  drawLabels();
+  ctx.drawImage(mapCache.get("all"), 0, 0);
+  drawSelectionOverlay(ctx);
+  drawLabels(ctx);
+}
+
+function scheduleRenderMap() {
+  if (pendingMapFrame) return;
+  pendingMapFrame = requestAnimationFrame(() => {
+    pendingMapFrame = null;
+    renderMap();
+  });
 }
 
 function regionEvents(regionKey = activeRegion) {
@@ -354,6 +1034,7 @@ function renderTimelines() {
 function selectRegion(regionKey) {
   activeRegion = regionKey;
   renderTimelines();
+  scheduleRenderMap();
 }
 
 function setView(viewName) {
@@ -369,6 +1050,17 @@ function canvasPoint(event) {
   ];
 }
 
+function hitRegionAt(x, y) {
+  for (let index = landTiles.length - 1; index >= 0; index -= 1) {
+    const tile = landTiles[index];
+    const style = tileStyles.get(tileKey(tile.row, tile.col));
+    if (!style?.regionKey) continue;
+    if (pointInPolygon(x, y, hexPoints(tile.x, tile.y - 32, 1.15))) return style.regionKey;
+  }
+  const region = [...regionShapes].reverse().find((item) => pointInPolygon(x, y, item.scatterPolygon));
+  return region?.key || null;
+}
+
 tabs.forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
 filterButtons.forEach((button) => {
   button.addEventListener("click", () => {
@@ -381,24 +1073,22 @@ filterButtons.forEach((button) => {
 searchInput.addEventListener("input", renderTimelines);
 canvas.addEventListener("click", (event) => {
   const [x, y] = canvasPoint(event);
-  const hit = [...hitTiles].reverse().find((tile) => ctx.isPointInPath(tile.path, x, y));
-  if (hit) selectRegion(hit.key);
+  const hit = hitRegionAt(x, y);
+  if (hit) selectRegion(hit);
 });
 canvas.addEventListener("mousemove", (event) => {
   const [x, y] = canvasPoint(event);
-  const hit = [...hitTiles].reverse().find((tile) => ctx.isPointInPath(tile.path, x, y));
-  hoverRegion = hit?.key || null;
-  canvas.style.cursor = hit ? "pointer" : "default";
+  const nextHoverRegion = hitRegionAt(x, y);
+  canvas.style.cursor = nextHoverRegion ? "pointer" : "default";
+  hoverRegion = nextHoverRegion;
 });
 clearRegion.addEventListener("click", () => {
   activeRegion = null;
   renderTimelines();
+  scheduleRenderMap();
 });
 
-function animate(now) {
-  renderMap(now - timeStart);
-  requestAnimationFrame(animate);
-}
-
+loadRegionIcons();
+loadReferenceMap();
 renderTimelines();
-requestAnimationFrame(animate);
+renderMap();

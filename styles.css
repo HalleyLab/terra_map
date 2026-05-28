@@ -25,6 +25,41 @@ body {
   min-height: 100vh;
 }
 
+.brand-mark {
+  position: fixed;
+  z-index: 16;
+  top: 20px;
+  left: 24px;
+  color: #0b1720;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.brand-mark strong,
+.brand-mark span,
+.brand-mark em {
+  display: block;
+}
+
+.brand-mark strong {
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.brand-mark span {
+  margin-top: 5px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.brand-mark em {
+  margin-top: 5px;
+  font-size: 23px;
+  font-style: normal;
+  font-weight: 500;
+}
+
 .view-tabs {
   position: fixed;
   z-index: 20;
@@ -90,7 +125,7 @@ body {
 
 #terraCanvas {
   display: block;
-  width: min(1480px, 78vw, calc((100vh - 126px) * 1880 / 731));
+  width: min(1720px, 90vw, calc((100vh - 82px) * 1880 / 731));
   height: auto;
   background: #547381;
 }
@@ -100,7 +135,7 @@ body {
   z-index: 18;
   top: 82px;
   right: 24px;
-  display: none;
+  display: block;
   width: min(390px, calc(100vw - 48px));
   max-height: calc(100vh - 106px);
   border: 1px solid rgba(255, 255, 255, 0.55);
@@ -109,10 +144,16 @@ body {
   background: var(--panel);
   box-shadow: 0 18px 44px rgba(8, 20, 28, 0.28);
   backdrop-filter: blur(10px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(18px);
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .region-panel.open {
-  display: block;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
 }
 
 .panel-title {
@@ -288,6 +329,10 @@ h2 {
     left: 12px;
     right: 12px;
     justify-content: stretch;
+  }
+
+  .brand-mark {
+    display: none;
   }
 
   .tab,

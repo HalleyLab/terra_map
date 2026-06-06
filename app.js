@@ -66,7 +66,8 @@ const tabs = document.querySelectorAll("[data-view]");
 const views = document.querySelectorAll(".view");
 const clearRegion = document.querySelector("#clearRegion");
 
-const hex = { w: 11.6, h: 6.6, stepX: 17.2, stepY: 9.9, depth: 18 };
+const referenceHex = { w: 8.1, h: 4.7, stepX: 12.0, stepY: 7.0, depth: 16 };
+const hex = { ...referenceHex };
 const referenceMapSrc = "map.png";
 const referenceMapOffset = { x: 0, y: 0 };
 const iconBaseUrl = "https://arknights.fandom.com/wiki/Special:Redirect/file/";
@@ -129,6 +130,8 @@ const referencePalette = [
   { key: "yan", rgb: [255, 196, 41], threshold: 86 },
   { key: "higashi", rgb: [42, 178, 173], threshold: 84 },
 ];
+const referenceRegionIds = new Map(referencePalette.map((item, index) => [item.key, index + 1]));
+const referenceRegionKeys = ["", ...referencePalette.map((item) => item.key)];
 const referenceBounds = {
   sargon: [0, 260, 760, 650],
   sami: [600, 30, 900, 185],
@@ -226,11 +229,28 @@ const labelPositions = Object.fromEntries(regionShapes.map((region) => [
   region.key,
   labelPositionOverrides[region.key] || polygonCenter(region.polygon),
 ]));
+const inferredRegionProfiles = [
+  { key: "bolivar", center: [330, 176], rx: 118, ry: 72 },
+  { key: "columbia", center: [585, 200], rx: 178, ry: 72 },
+  { key: "kjerag", center: [768, 226], rx: 112, ry: 66 },
+  { key: "minos", center: [575, 348], rx: 92, ry: 56 },
+  { key: "siesta", center: [750, 370], rx: 122, ry: 64 },
+  { key: "kazdel", center: [1328, 220], rx: 182, ry: 84 },
+  { key: "laterano", center: [1134, 360], rx: 112, ry: 60 },
+];
 let activeRegion = null;
 let activeFilter = "all";
 let hoverRegion = null;
 let baseReady = false;
 let pendingMapFrame = null;
+let referenceMasks = null;
+let mapLayout = {
+  scale: 1,
+  offsetX: 0,
+  offsetY: 0,
+  referenceWidth: 1883,
+  referenceHeight: 760,
+};
 
 function parsePoints(points) {
   return points.split(" ").map((pair) => pair.split(",").map(Number));
@@ -281,6 +301,62 @@ function hexPoints(cx, cy, grow = 0) {
     [cx - w, cy + h / 2],
     [cx - w, cy - h / 2],
   ];
+}
+
+function referenceHexPoints(cx, cy, grow = 0) {
+  const w = referenceHex.w + grow;
+  const h = referenceHex.h + grow * 0.57;
+  return [
+    [cx, cy - h],
+    [cx + w, cy - h / 2],
+    [cx + w, cy + h / 2],
+    [cx, cy + h],
+    [cx - w, cy + h / 2],
+    [cx - w, cy - h / 2],
+  ];
+}
+
+function updateMapLayout(referenceWidth = mapLayout.referenceWidth, referenceHeight = mapLayout.referenceHeight) {
+  const paddingX = 46;
+  const paddingY = 28;
+  const scale = Math.min(
+    (canvas.width - paddingX * 2) / referenceWidth,
+    (canvas.height - paddingY * 2) / referenceHeight,
+  );
+  mapLayout = {
+    scale,
+    offsetX: (canvas.width - referenceWidth * scale) / 2,
+    offsetY: (canvas.height - referenceHeight * scale) / 2,
+    referenceWidth,
+    referenceHeight,
+  };
+  hex.w = referenceHex.w * scale;
+  hex.h = referenceHex.h * scale;
+  hex.stepX = referenceHex.stepX * scale;
+  hex.stepY = referenceHex.stepY * scale;
+  hex.depth = referenceHex.depth * scale;
+}
+
+function referenceToCanvasPoint(point) {
+  return [
+    mapLayout.offsetX + point[0] * mapLayout.scale,
+    mapLayout.offsetY + point[1] * mapLayout.scale,
+  ];
+}
+
+function referenceTileCenter(row, col) {
+  return [
+    34 + col * referenceHex.stepX + (row % 2 ? referenceHex.stepX / 2 : 0),
+    48 + row * referenceHex.stepY,
+  ];
+}
+
+function makeTile(row, col, refX = null, refY = null) {
+  const [nextRefX, nextRefY] = refX === null || refY === null
+    ? referenceTileCenter(row, col)
+    : [refX, refY];
+  const [x, y] = referenceToCanvasPoint([nextRefX, nextRefY]);
+  return { x, y, refX: nextRefX, refY: nextRefY, row, col };
 }
 
 function drawPolygon(target, points, fill, stroke = null, lineWidth = 1) {
@@ -335,12 +411,34 @@ function inReferenceBounds(key, x, y) {
   return x >= bounds[0] && y >= bounds[1] && x <= bounds[2] && y <= bounds[3];
 }
 
+function matchesReferenceHue(key, rgb) {
+  const [r, g, b] = rgb;
+  if (key === "sargon") return g > 145 && g - r > 22 && g - b > 18;
+  if (key === "sami") return b > 170 && g > 130 && b - r > 70 && b - g > 24;
+  if (key === "kazimierz") return r > 205 && g > 185 && b < 130;
+  if (key === "victoria") return r > 205 && g > 100 && g < 190 && b < 95;
+  if (key === "leithanien") return r > 115 && b > 150 && g < 125;
+  if (key === "iberia") return r > 175 && g > 185 && b < 120;
+  if (key === "ursus") return r > 145 && g < 105 && b < 110;
+  if (key === "lungmen") return r > 205 && g > 155 && b < 115;
+  if (key === "siracusa") return g > 150 && r > 105 && b < 155 && g - b > 32;
+  if (key === "rim") return r > 105 && g > 65 && g < 155 && b < 135 && r - b > 18;
+  if (key === "yan") return r > 205 && g > 145 && b < 115;
+  if (key === "higashi") return g > 140 && b > 125 && r < 105 && Math.abs(g - b) < 70;
+  return true;
+}
+
 function classifyReferenceColor(rgb, x, y) {
   if (rgb[0] + rgb[1] + rgb[2] < 82 || colorChroma(rgb) < 34) return null;
   const match = referencePalette
     .map((item) => ({ ...item, distance: colorDistance(rgb, item.rgb) }))
     .sort((a, b) => a.distance - b.distance)[0];
-  return match && match.distance < match.threshold && inReferenceBounds(match.key, x, y) ? match.key : null;
+  return match
+    && match.distance < match.threshold
+    && matchesReferenceHue(match.key, rgb)
+    && inReferenceBounds(match.key, x, y)
+    ? match.key
+    : null;
 }
 
 function isReferenceTerrainPixel(rgb, x, y) {
@@ -351,6 +449,33 @@ function isReferenceTerrainPixel(rgb, x, y) {
   const greyTop = brightness > 122 && brightness < 205 && chroma < 30;
   const brightEdge = brightness > 205 && chroma < 92;
   return neutralTop || greyTop || brightEdge;
+}
+
+function isReferenceTerrainPixelFast(rgb, regionKey) {
+  if (regionKey) return true;
+  const brightness = (rgb[0] + rgb[1] + rgb[2]) / 3;
+  const chroma = colorChroma(rgb);
+  const neutralTop = brightness > 176 && chroma < 70;
+  const greyTop = brightness > 128 && brightness < 205 && chroma < 28;
+  const brightEdge = brightness > 212 && chroma < 86;
+  return neutralTop || greyTop || brightEdge;
+}
+
+function buildReferenceMasks(imageData, width, height) {
+  const landMask = new Uint8Array(width * height);
+  const regionMask = new Uint8Array(width * height);
+  const data = imageData.data;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      const offset = index * 4;
+      const rgb = [data[offset], data[offset + 1], data[offset + 2]];
+      const regionKey = classifyReferenceColor(rgb, x, y);
+      if (isReferenceTerrainPixelFast(rgb, regionKey)) landMask[index] = 1;
+      if (regionKey) regionMask[index] = referenceRegionIds.get(regionKey) || 0;
+    }
+  }
+  return { width, height, landMask, regionMask };
 }
 
 function tileNoise(row, col, seed) {
@@ -577,62 +702,61 @@ function loadRegionIcons() {
   regionIcons.clear();
 }
 
-function sampleReferenceRegion(referenceCtx, image, tile) {
-  const sampleX = tile.x * (image.width / canvas.width) + referenceMapOffset.x;
-  const sampleY = tile.y + referenceMapOffset.y;
-  const offsets = [
-    [0, 0],
-    [-hex.w * 0.44, 0],
-    [hex.w * 0.44, 0],
-    [0, -hex.h * 0.44],
-    [0, hex.h * 0.44],
-    [-hex.w * 0.28, -hex.h * 0.26],
-    [hex.w * 0.28, -hex.h * 0.26],
-    [-hex.w * 0.28, hex.h * 0.26],
-    [hex.w * 0.28, hex.h * 0.26],
-  ];
-  const votes = new Map();
-  offsets.forEach(([offsetX, offsetY]) => {
-    const x = Math.round(Math.max(0, Math.min(image.width - 1, sampleX + offsetX)));
-    const y = Math.round(Math.max(0, Math.min(image.height - 1, sampleY + offsetY)));
-    const pixel = referenceCtx.getImageData(x, y, 1, 1).data;
-    const key = classifyReferenceColor([pixel[0], pixel[1], pixel[2]], x, y);
-    if (key) votes.set(key, (votes.get(key) || 0) + 1);
-  });
-  return [...votes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+function referenceTileStats(reference, tile) {
+  const cx = tile.refX + referenceMapOffset.x;
+  const cy = tile.refY + referenceMapOffset.y;
+  const points = referenceHexPoints(cx, cy, 0.45);
+  const minX = Math.max(0, Math.floor(Math.min(...points.map(([x]) => x))));
+  const maxX = Math.min(reference.width - 1, Math.ceil(Math.max(...points.map(([x]) => x))));
+  const minY = Math.max(0, Math.floor(Math.min(...points.map(([, y]) => y))));
+  const maxY = Math.min(reference.height - 1, Math.ceil(Math.max(...points.map(([, y]) => y))));
+  const regionVotes = new Uint16Array(referenceRegionKeys.length);
+  let total = 0;
+  let landCount = 0;
+  for (let y = minY; y <= maxY; y += 1) {
+    for (let x = minX; x <= maxX; x += 1) {
+      if (!pointInPolygon(x, y, points)) continue;
+      total += 1;
+      const index = y * reference.width + x;
+      if (reference.landMask[index]) landCount += 1;
+      const regionId = reference.regionMask[index];
+      if (regionId) regionVotes[regionId] += 1;
+    }
+  }
+  let regionId = 0;
+  let regionCount = 0;
+  for (let index = 1; index < regionVotes.length; index += 1) {
+    if (regionVotes[index] > regionCount) {
+      regionCount = regionVotes[index];
+      regionId = index;
+    }
+  }
+  const landRatio = total ? landCount / total : 0;
+  const regionRatio = total ? regionCount / total : 0;
+  return {
+    landRatio,
+    regionRatio,
+    regionKey: regionRatio > 0.13 ? referenceRegionKeys[regionId] : null,
+  };
 }
 
-function sampleReferenceLand(referenceCtx, image, tile) {
-  const sampleX = tile.x * (image.width / canvas.width) + referenceMapOffset.x;
-  const sampleY = tile.y + referenceMapOffset.y;
-  const offsets = [
-    [0, 0],
-    [-hex.w * 0.5, 0],
-    [hex.w * 0.5, 0],
-    [0, -hex.h * 0.5],
-    [0, hex.h * 0.5],
-    [-hex.w * 0.35, -hex.h * 0.32],
-    [hex.w * 0.35, -hex.h * 0.32],
-    [-hex.w * 0.35, hex.h * 0.32],
-    [hex.w * 0.35, hex.h * 0.32],
-  ];
-  const hits = offsets.filter(([offsetX, offsetY]) => {
-    const x = Math.round(Math.max(0, Math.min(image.width - 1, sampleX + offsetX)));
-    const y = Math.round(Math.max(0, Math.min(image.height - 1, sampleY + offsetY)));
-    const pixel = referenceCtx.getImageData(x, y, 1, 1).data;
-    return isReferenceTerrainPixel([pixel[0], pixel[1], pixel[2]], x, y);
-  }).length;
-  return hits >= 4;
+function sampleReferenceRegion(reference, image, tile) {
+  return tile.referenceRegionKey || referenceTileStats(reference, tile).regionKey;
 }
 
-function buildReferenceLandTiles(referenceCtx, image) {
+function buildReferenceLandTiles(reference, image) {
   const tiles = [];
-  const rows = Math.ceil(canvas.height / hex.stepY) + 3;
-  const cols = Math.ceil(canvas.width / hex.stepX) + 3;
+  const rows = Math.ceil(reference.height / referenceHex.stepY) + 3;
+  const cols = Math.ceil(reference.width / referenceHex.stepX) + 3;
   for (let row = 0; row < rows; row += 1) {
     for (let col = 0; col < cols; col += 1) {
-      const [x, y] = tileCenter(row, col);
-      if (sampleReferenceLand(referenceCtx, image, { x, y, row, col })) tiles.push({ x, y, row, col });
+      const [refX, refY] = referenceTileCenter(row, col);
+      const tile = makeTile(row, col, refX, refY);
+      const stats = referenceTileStats(reference, tile);
+      if (stats.landRatio >= 0.19) {
+        tile.referenceRegionKey = stats.regionKey;
+        tiles.push(tile);
+      }
     }
   }
   return tiles;
@@ -662,6 +786,28 @@ function largestConnectedTileGroup(tiles) {
   return largest;
 }
 
+function fillReferenceTileGaps(tiles) {
+  const tileMap = new Map(tiles.map((tile) => [tileKey(tile.row, tile.col), tile]));
+  for (let pass = 0; pass < 3; pass += 1) {
+    const additions = new Map();
+    tileMap.forEach((tile) => {
+      neighborCoords(tile.row, tile.col).forEach(([row, col]) => {
+        const key = tileKey(row, col);
+        if (tileMap.has(key) || additions.has(key)) return;
+        const landNeighborCount = neighborCoords(row, col)
+          .filter(([nextRow, nextCol]) => tileMap.has(tileKey(nextRow, nextCol))).length;
+        if (landNeighborCount < 4) return;
+        const [refX, refY] = referenceTileCenter(row, col);
+        const [x, y] = referenceToCanvasPoint([refX, refY]);
+        if (x < 16 || x > canvas.width - 16 || y < 32 || y > canvas.height - 24) return;
+        additions.set(key, { x, y, refX, refY, row, col });
+      });
+    });
+    additions.forEach((tile, key) => tileMap.set(key, tile));
+  }
+  return [...tileMap.values()];
+}
+
 function addWhiteBufferAroundRegions(tiles, tilesByRegion) {
   const tileMap = new Map(tiles.map((tile) => [tileKey(tile.row, tile.col), tile]));
   const regionKeys = new Set();
@@ -681,7 +827,8 @@ function addWhiteBufferAroundRegions(tiles, tilesByRegion) {
         if (tileMap.has(key) || regionKeys.has(key)) return;
         const [x, y] = tileCenter(row, col);
         if (x < 18 || x > canvas.width - 18 || y < 36 || y > canvas.height - 34) return;
-        const nextTile = { x, y, row, col };
+        const [refX, refY] = referenceTileCenter(row, col);
+        const nextTile = { x, y, refX, refY, row, col };
         tileMap.set(key, nextTile);
         additions.push(nextTile);
       });
@@ -696,25 +843,39 @@ function nearLandEdge(tile) {
 }
 
 function keepSampledRegionTile(key, tile) {
-  if (key === "sargon" && tile.y > 620 && nearLandEdge(tile)) return false;
+  if (key === "sargon" && tile.refY > 620 && nearLandEdge(tile)) return false;
   return true;
+}
+
+function inferredRegionForTile(tile, assignedTiles) {
+  if (assignedTiles.has(tileKey(tile.row, tile.col))) return null;
+  let best = null;
+  inferredRegionProfiles.forEach((profile) => {
+    const dx = (tile.refX - profile.center[0]) / profile.rx;
+    const dy = (tile.refY - profile.center[1]) / profile.ry;
+    const score = dx * dx + dy * dy;
+    if (score <= 1 && (!best || score < best.score)) best = { key: profile.key, score };
+  });
+  return best?.key || null;
 }
 
 function buildReferenceRegionTiles(referenceCtx, image) {
   const sampledRegionKeys = new Set(referencePalette.map((item) => item.key));
   const tilesByRegion = new Map(regionShapes.map((region) => [region.key, []]));
+  const assignedTiles = new Set();
   landTiles.forEach((tile) => {
     const key = sampleReferenceRegion(referenceCtx, image, tile);
     const region = key ? regionByKey.get(key) : null;
     if (region && sampledRegionKeys.has(key) && keepSampledRegionTile(key, tile)) {
       tilesByRegion.get(key).push(tile);
+      assignedTiles.add(tileKey(tile.row, tile.col));
     }
   });
-  regionShapes.forEach((region) => {
-    const tiles = tilesByRegion.get(region.key);
-    if (!sampledRegionKeys.has(region.key) || tiles.length < 6) {
-      tilesByRegion.set(region.key, landTiles.filter((tile) => selectRegionTile(tile, region)));
-    }
+  landTiles.forEach((tile) => {
+    const inferredKey = inferredRegionForTile(tile, assignedTiles);
+    if (!inferredKey) return;
+    tilesByRegion.get(inferredKey).push(tile);
+    assignedTiles.add(tileKey(tile.row, tile.col));
   });
   return tilesByRegion;
 }
@@ -729,11 +890,11 @@ function loadReferenceMap() {
       referenceCanvas.height = image.height;
       const referenceCtx = referenceCanvas.getContext("2d", { willReadFrequently: true });
       referenceCtx.drawImage(image, 0, 0);
-      landTiles = largestConnectedTileGroup(buildReferenceLandTiles(referenceCtx, image));
+      updateMapLayout(image.width, image.height);
+      referenceMasks = buildReferenceMasks(referenceCtx.getImageData(0, 0, image.width, image.height), image.width, image.height);
+      landTiles = fillReferenceTileGaps(largestConnectedTileGroup(buildReferenceLandTiles(referenceMasks, image)));
       landTileKeys = new Set(landTiles.map((tile) => tileKey(tile.row, tile.col)));
-      regionTiles = buildReferenceRegionTiles(referenceCtx, image);
-      landTiles = addWhiteBufferAroundRegions(landTiles, regionTiles);
-      landTileKeys = new Set(landTiles.map((tile) => tileKey(tile.row, tile.col)));
+      regionTiles = buildReferenceRegionTiles(referenceMasks, image);
       perimeterTiles = buildPerimeterTiles();
       tileStyles = buildTileStyles();
       mapCache.clear();
@@ -748,23 +909,54 @@ function loadReferenceMap() {
 function drawHexPrism(target, x, y, color, options = {}) {
   const lift = options.lift ?? 0;
   const topY = y - lift;
-  const top = hexPoints(x, topY, options.grow ?? 0);
-  const bottom = top.map(([px, py]) => [px, py + (options.depth ?? hex.depth)]);
-  drawPolygon(target, [top[3], top[4], bottom[4], bottom[3]], shade(color, -64));
-  drawPolygon(target, [top[1], top[2], bottom[2], bottom[1]], shade(color, -42));
-  drawPolygon(target, [top[2], top[3], bottom[3], bottom[2]], shade(color, -78));
+  const grow = options.part === "sides"
+    ? (options.sideGrow ?? options.grow ?? 0)
+    : (options.topGrow ?? options.grow ?? 0);
+  const top = hexPoints(x, topY, grow);
+  const depth = options.depth ?? hex.depth;
+  const bottom = top.map(([px, py]) => [px, py + depth]);
+  const sideGradient = (stops, offset = 0) => {
+    const gradient = target.createLinearGradient(x, topY + offset, x, topY + depth);
+    stops.forEach(([position, fill]) => gradient.addColorStop(position, fill));
+    return gradient;
+  };
+  const leftSide = options.leftSide ?? sideGradient([
+    [0, shade(color, -30)],
+    [0.45, shade(color, -48)],
+    [1, shade(color, -70)],
+  ], hex.h * 0.35);
+  const rightSide = options.rightSide ?? sideGradient([
+    [0, shade(color, -38)],
+    [0.5, shade(color, -56)],
+    [1, shade(color, -78)],
+  ], hex.h * 0.2);
+  const frontSide = options.frontSide ?? sideGradient([
+    [0, blendColor(color, "#ffffff", 0.08)],
+    [0.35, shade(color, -22)],
+    [1, shade(color, -58)],
+  ]);
+  if (options.part !== "top") {
+    drawPolygon(target, [top[3], top[4], bottom[4], bottom[3]], leftSide);
+    drawPolygon(target, [top[1], top[2], bottom[2], bottom[1]], rightSide);
+    drawPolygon(target, [top[2], top[3], bottom[3], bottom[2]], frontSide);
+  }
   let topFill = color;
   if (options.gradientTo) {
-    topFill = target.createLinearGradient(x - hex.w, topY - hex.h, x + hex.w, topY + hex.h);
-    topFill.addColorStop(0, blendColor(color, "#ffffff", 0.2));
-    topFill.addColorStop(0.48, color);
+    topFill = target.createLinearGradient(x - hex.w * 0.9, topY - hex.h * 1.1, x + hex.w * 0.95, topY + hex.h * 1.15);
+    topFill.addColorStop(0, blendColor(color, "#ffffff", 0.24));
+    topFill.addColorStop(0.52, color);
     topFill.addColorStop(1, options.gradientTo);
   }
+  if (options.part === "sides") return;
   target.save();
   if (options.topAlpha !== undefined) target.globalAlpha *= options.topAlpha;
-  drawPolygon(target, top, topFill, options.stroke ?? "rgba(40, 68, 80, 0.14)", options.strokeWidth ?? 0.35);
+  target.shadowColor = "rgba(0,0,0,0)";
+  target.shadowBlur = 0;
+  target.shadowOffsetX = 0;
+  target.shadowOffsetY = 0;
+  drawPolygon(target, top, topFill, options.stroke ?? null, options.strokeWidth ?? 0);
   if (options.shine) {
-    drawPolygon(target, [top[0], top[1], [x + 3, topY], top[5]], `rgba(255,255,255,${options.shine})`);
+    drawPolygon(target, top, `rgba(255,255,255,${options.shine * 0.42})`);
   }
   target.restore();
 }
@@ -775,10 +967,7 @@ function drawBackground(target) {
 }
 
 function tileCenter(row, col) {
-  return [
-    40 + col * hex.stepX + (row % 2 ? hex.stepX / 2 : 0),
-    72 + row * hex.stepY,
-  ];
+  return referenceToCanvasPoint(referenceTileCenter(row, col));
 }
 
 function buildLandTiles() {
@@ -794,13 +983,11 @@ function buildLandTiles() {
   return tiles;
 }
 
-let landTiles = buildLandTiles();
-let landTileKeys = new Set(landTiles.map((tile) => tileKey(tile.row, tile.col)));
-let perimeterTiles = buildPerimeterTiles();
-let regionTiles = new Map(regionShapes.map((region) => [
-  region.key,
-  landTiles.filter((tile) => selectRegionTile(tile, region)),
-]));
+updateMapLayout();
+let landTiles = [];
+let landTileKeys = new Set();
+let perimeterTiles = [];
+let regionTiles = new Map(regionShapes.map((region) => [region.key, []]));
 let tileStyles = buildTileStyles();
 
 function tileKey(row, col) {
@@ -860,87 +1047,96 @@ function renderBaseCache() {
   baseReady = true;
 }
 
-function drawPerimeterTile(target, tile) {
+function drawPerimeterTile(target, tile, part = "all") {
   const bottomFade = tile.y > canvas.height * 0.64
     ? Math.max(0.04, 1 - (tile.y - canvas.height * 0.64) / 72) * 0.22
     : 0.55;
   target.save();
   target.globalAlpha *= bottomFade;
   target.shadowColor = "rgba(7, 20, 30, 0.3)";
-  target.shadowBlur = tile.y > canvas.height * 0.64 ? 5 : 10;
-  target.shadowOffsetX = 4;
-  target.shadowOffsetY = 7;
+  target.shadowBlur = (tile.y > canvas.height * 0.64 ? 5 : 10) * mapLayout.scale;
+  target.shadowOffsetX = 4 * mapLayout.scale;
+  target.shadowOffsetY = 7 * mapLayout.scale;
   drawHexPrism(target, tile.x, tile.y, "#273d49", {
-    depth: 20,
-    grow: 0.08,
+    part,
+    depth: 20 * mapLayout.scale,
+    sideGrow: 0.08 * mapLayout.scale,
+    topGrow: 0.08 * mapLayout.scale,
     gradientTo: "#344f5e",
-    stroke: "rgba(8,16,22,0.18)",
-    strokeWidth: 0.2,
+    stroke: null,
+    strokeWidth: 0,
   });
   target.restore();
 }
 
-function drawLandTile(target, tile) {
+function drawLandTile(target, tile, part = "all") {
   const style = tileStyles.get(tileKey(tile.row, tile.col)) || {
     kind: "background",
     color: "#eef8fb",
     gradientTo: "#ffffff",
   };
   const isActive = style.regionKey && activeRegion === style.regionKey;
-  const shineBase = style.kind === "background" ? 0.03 : 0.06;
+  const shineBase = style.kind === "background" ? 0.012 : 0.028;
   const shine = shineBase + ((tile.row * 2 + tile.col) % 5) * 0.015;
   const topAlpha = activeRegion && style.regionKey && activeRegion !== style.regionKey
-    ? 0.78
+    ? 0.68
     : 1;
-  const lift = style.kind === "region" ? 32 : 0;
+  const lift = style.kind === "region" ? 38 * mapLayout.scale : 0;
 
   target.save();
   target.shadowColor = style.kind === "background" ? "rgba(8, 24, 32, 0.08)" : "rgba(8, 27, 38, 0.22)";
-  target.shadowBlur = isActive ? 16 : style.kind === "background" ? 2 : 11;
-  target.shadowOffsetX = style.kind === "background" ? 1 : 7;
-  target.shadowOffsetY = style.kind === "background" ? 2 : 9;
+  target.shadowBlur = (isActive ? 18 : style.kind === "background" ? 2 : 13) * mapLayout.scale;
+  target.shadowOffsetX = (style.kind === "background" ? 1 : 8) * mapLayout.scale;
+  target.shadowOffsetY = (style.kind === "background" ? 2 : 10) * mapLayout.scale;
   drawHexPrism(target, tile.x, tile.y, style.color, {
-    depth: style.kind === "region" ? 54 : 22,
+    part,
+    depth: (style.kind === "region" ? 58 : 18) * mapLayout.scale,
     lift,
-    grow: style.kind === "region" ? 1.15 : 0.48,
+    sideGrow: (style.kind === "region" ? 0.35 : 0.18) * mapLayout.scale,
+    topGrow: (style.kind === "region" ? 0.35 : 0.18) * mapLayout.scale,
     shine,
     gradientTo: style.gradientTo,
     topAlpha,
-    stroke: style.kind === "background" ? "rgba(40, 68, 80, 0.13)" : null,
-    strokeWidth: style.kind === "background" ? 0.2 : 0,
+    stroke: null,
+    strokeWidth: 0,
   });
   target.restore();
 }
 
 function renderTiles(target) {
-  const terrainTiles = [
-    ...landTiles.map((tile) => ({ ...tile, layer: "land" })),
-  ].sort((a, b) => a.y - b.y || a.x - b.x || (a.layer === "perimeter" ? 1 : -1));
-  terrainTiles.forEach((tile) => {
-    drawLandTile(target, tile);
-  });
+  const sortedPerimeter = perimeterTiles
+    .slice()
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+  const sortedLand = landTiles
+    .slice()
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+  sortedPerimeter.forEach((tile) => drawPerimeterTile(target, tile, "all"));
+  sortedLand.forEach((tile) => drawLandTile(target, tile, "sides"));
+  sortedLand.forEach((tile) => drawLandTile(target, tile, "top"));
 }
 
 function drawLabels(target) {
   regionShapes.forEach((region) => {
-    const [x, y] = labelPositions[region.key];
+    const [x, y] = referenceToCanvasPoint(labelPositions[region.key]);
     const cityLabel = region.key === "chernobog" || region.key === "lungmen";
-    const labelLift = cityLabel ? 28 : 32;
+    const labelLift = (cityLabel ? 28 : 32) * mapLayout.scale;
+    const lineStep = 20 * mapLayout.scale;
     const lines = region.name.includes(" / ") ? [region.name] : region.name.split("\n");
     target.save();
+    if (activeRegion && region.key !== activeRegion) target.globalAlpha *= 0.55;
     target.textAlign = "center";
     target.textBaseline = "middle";
-    target.font = cityLabel ? "900 12px Arial, sans-serif" : "900 20px Arial, sans-serif";
+    target.font = cityLabel
+      ? `900 ${Math.max(10, 12 * mapLayout.scale)}px Arial, sans-serif`
+      : `900 ${Math.max(15, 20 * mapLayout.scale)}px Arial, sans-serif`;
     target.lineJoin = "round";
     target.shadowColor = "rgba(0,0,0,0.5)";
-    target.shadowBlur = 4;
-    target.shadowOffsetY = 3;
-    const labelWidth = Math.max(...lines.map((line) => target.measureText(line).width));
-    drawLabelIcon(target, region, x, y - labelLift, labelWidth, cityLabel);
+    target.shadowBlur = 4 * mapLayout.scale;
+    target.shadowOffsetY = 3 * mapLayout.scale;
     lines.forEach((line, index) => {
-      const lineY = y - labelLift + index * 20;
+      const lineY = y - labelLift + index * lineStep;
       target.strokeStyle = "#071017";
-      target.lineWidth = cityLabel ? 4 : 5.4;
+      target.lineWidth = (cityLabel ? 4 : 5.4) * mapLayout.scale;
       target.strokeText(line, x, lineY);
       target.fillStyle = "#ffffff";
       target.fillText(line, x, lineY);
@@ -975,10 +1171,14 @@ function drawSelectionOverlay(target) {
 
 function renderMap() {
   renderBaseCache();
-  if (!mapCache.has("all")) buildMapCache();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(mapCache.get("all"), 0, 0);
-  drawSelectionOverlay(ctx);
+  if (activeRegion) {
+    ctx.drawImage(baseCanvas, 0, 0);
+    renderTiles(ctx);
+  } else {
+    if (!mapCache.has("all")) buildMapCache();
+    ctx.drawImage(mapCache.get("all"), 0, 0);
+  }
   drawLabels(ctx);
 }
 
@@ -1055,10 +1255,17 @@ function hitRegionAt(x, y) {
     const tile = landTiles[index];
     const style = tileStyles.get(tileKey(tile.row, tile.col));
     if (!style?.regionKey) continue;
-    if (pointInPolygon(x, y, hexPoints(tile.x, tile.y - 32, 1.15))) return style.regionKey;
+    if (pointInPolygon(x, y, hexPoints(tile.x, tile.y - 26 * mapLayout.scale, 0.35 * mapLayout.scale))) return style.regionKey;
   }
-  const region = [...regionShapes].reverse().find((item) => pointInPolygon(x, y, item.scatterPolygon));
-  return region?.key || null;
+  for (let index = regionShapes.length - 1; index >= 0; index -= 1) {
+    const region = regionShapes[index];
+    const [labelX, labelY] = referenceToCanvasPoint(labelPositions[region.key]);
+    const cityLabel = region.key === "chernobog" || region.key === "lungmen";
+    const labelLift = (cityLabel ? 28 : 32) * mapLayout.scale;
+    const hitRadius = (cityLabel ? 54 : 92) * mapLayout.scale;
+    if (Math.hypot(x - labelX, y - labelLift) < hitRadius) return region.key;
+  }
+  return null;
 }
 
 tabs.forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));

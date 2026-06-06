@@ -125,7 +125,7 @@ body {
 
 #terraCanvas {
   display: block;
-  width: min(1720px, 90vw, calc((100vh - 82px) * 1880 / 731));
+  width: min(1780px, 92vw, calc((100vh - 82px) * 2000 / 860));
   height: auto;
   background: #547381;
 }

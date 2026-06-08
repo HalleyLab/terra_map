@@ -95,26 +95,26 @@ const regionIconFiles = {
 };
 const regionIcons = new Map();
 const displayRegionColors = {
-  bolivar: "#7f969f",
-  columbia: "#cbe6ed",
-  sargon: "#54b86f",
-  minos: "#d9eee5",
-  siesta: "#d7e4f2",
-  sami: "#56aee1",
-  kjerag: "#dbe9ef",
-  kazimierz: "#e7d858",
-  victoria: "#e88924",
-  leithanien: "#8f48c7",
-  laterano: "#e9e0c7",
-  iberia: "#cbd84a",
-  ursus: "#c93a3c",
-  chernobog: "#bd3035",
-  lungmen: "#d9b235",
-  kazdel: "#cad8dd",
-  siracusa: "#8cc461",
-  rim: "#946754",
-  yan: "#e2a832",
-  higashi: "#279995",
+  bolivar: "#829ead",
+  columbia: "#bcebf5",
+  sargon: "#44c96b",
+  minos: "#cef4e4",
+  siesta: "#c9e2ff",
+  sami: "#43b8f6",
+  kjerag: "#d7eef7",
+  kazimierz: "#f0e13f",
+  victoria: "#f39220",
+  leithanien: "#9a3fde",
+  laterano: "#f0e4bd",
+  iberia: "#d8e43c",
+  ursus: "#d9363d",
+  chernobog: "#ce2934",
+  lungmen: "#e6bd2c",
+  kazdel: "#d4e8ee",
+  siracusa: "#8bd25a",
+  rim: "#a56e56",
+  yan: "#efb42b",
+  higashi: "#22aaa4",
 };
 const referencePalette = [
   { key: "sargon", rgb: [98, 189, 103], threshold: 82 },
@@ -317,8 +317,8 @@ function referenceHexPoints(cx, cy, grow = 0) {
 }
 
 function updateMapLayout(referenceWidth = mapLayout.referenceWidth, referenceHeight = mapLayout.referenceHeight) {
-  const paddingX = 46;
-  const paddingY = 28;
+  const paddingX = 18;
+  const paddingY = 14;
   const scale = Math.min(
     (canvas.width - paddingX * 2) / referenceWidth,
     (canvas.height - paddingY * 2) / referenceHeight,
@@ -788,23 +788,57 @@ function largestConnectedTileGroup(tiles) {
 
 function fillReferenceTileGaps(tiles) {
   const tileMap = new Map(tiles.map((tile) => [tileKey(tile.row, tile.col), tile]));
-  for (let pass = 0; pass < 3; pass += 1) {
+  for (let pass = 0; pass < 5; pass += 1) {
     const additions = new Map();
     tileMap.forEach((tile) => {
       neighborCoords(tile.row, tile.col).forEach(([row, col]) => {
         const key = tileKey(row, col);
         if (tileMap.has(key) || additions.has(key)) return;
-        const landNeighborCount = neighborCoords(row, col)
-          .filter(([nextRow, nextCol]) => tileMap.has(tileKey(nextRow, nextCol))).length;
-        if (landNeighborCount < 4) return;
+        const neighbors = neighborCoords(row, col)
+          .map(([nextRow, nextCol]) => tileMap.get(tileKey(nextRow, nextCol)))
+          .filter(Boolean);
+        const landNeighborCount = neighbors.length;
+        const originalNeighborCount = neighbors.filter((neighbor) => !neighbor.isGapFill).length;
+        if (landNeighborCount < 4 || originalNeighborCount < 3) return;
         const [refX, refY] = referenceTileCenter(row, col);
         const [x, y] = referenceToCanvasPoint([refX, refY]);
         if (x < 16 || x > canvas.width - 16 || y < 32 || y > canvas.height - 24) return;
-        additions.set(key, { x, y, refX, refY, row, col });
+        additions.set(key, { x, y, refX, refY, row, col, isGapFill: true });
       });
     });
     additions.forEach((tile, key) => tileMap.set(key, tile));
   }
+  return [...tileMap.values()];
+}
+
+function fillReferenceRegionWhiteGaps(tiles, tilesByRegion) {
+  const tileMap = new Map(tiles.map((tile) => [tileKey(tile.row, tile.col), tile]));
+  const regionKeys = new Set();
+  tilesByRegion.forEach((regionTileList) => {
+    regionTileList.forEach((tile) => regionKeys.add(tileKey(tile.row, tile.col)));
+  });
+
+  for (let pass = 0; pass < 2; pass += 1) {
+    const additions = new Map();
+    regionKeys.forEach((regionTileKey) => {
+      const tile = tileMap.get(regionTileKey);
+      if (!tile) return;
+      neighborCoords(tile.row, tile.col).forEach(([row, col]) => {
+        const key = tileKey(row, col);
+        if (tileMap.has(key) || additions.has(key)) return;
+        const neighborKeys = neighborCoords(row, col).map(([nextRow, nextCol]) => tileKey(nextRow, nextCol));
+        const landNeighborCount = neighborKeys.filter((nextKey) => tileMap.has(nextKey)).length;
+        const regionNeighborCount = neighborKeys.filter((nextKey) => regionKeys.has(nextKey)).length;
+        if (landNeighborCount < 5 || regionNeighborCount < 3) return;
+        const [refX, refY] = referenceTileCenter(row, col);
+        const [x, y] = referenceToCanvasPoint([refX, refY]);
+        if (x < 16 || x > canvas.width - 16 || y < 32 || y > canvas.height - 24) return;
+        additions.set(key, { x, y, refX, refY, row, col, isGapFill: true });
+      });
+    });
+    additions.forEach((tile, key) => tileMap.set(key, tile));
+  }
+
   return [...tileMap.values()];
 }
 
@@ -848,6 +882,7 @@ function keepSampledRegionTile(key, tile) {
 }
 
 function inferredRegionForTile(tile, assignedTiles) {
+  if (tile.isGapFill) return null;
   if (assignedTiles.has(tileKey(tile.row, tile.col))) return null;
   let best = null;
   inferredRegionProfiles.forEach((profile) => {
@@ -895,6 +930,8 @@ function loadReferenceMap() {
       landTiles = fillReferenceTileGaps(largestConnectedTileGroup(buildReferenceLandTiles(referenceMasks, image)));
       landTileKeys = new Set(landTiles.map((tile) => tileKey(tile.row, tile.col)));
       regionTiles = buildReferenceRegionTiles(referenceMasks, image);
+      landTiles = fillReferenceRegionWhiteGaps(landTiles, regionTiles);
+      landTileKeys = new Set(landTiles.map((tile) => tileKey(tile.row, tile.col)));
       perimeterTiles = buildPerimeterTiles();
       tileStyles = buildTileStyles();
       mapCache.clear();
@@ -961,9 +998,227 @@ function drawHexPrism(target, x, y, color, options = {}) {
   target.restore();
 }
 
+function drawOriginiumShard(target, cx, cy, size, rotation, alpha = 0.34) {
+  const points = [
+    [0.02, -1.2],
+    [0.48, -0.52],
+    [0.86, -0.08],
+    [0.26, 0.42],
+    [0.1, 1.12],
+    [-0.38, 0.58],
+    [-0.72, 0.22],
+    [-0.32, -0.44],
+  ];
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  const mapped = points.map(([x, y]) => [
+    cx + (x * cos - y * sin) * size,
+    cy + (x * sin + y * cos) * size,
+  ]);
+  const lower = mapped.map(([x, y]) => [x + size * 0.16, y + size * 0.36]);
+  const shadow = mapped.map(([x, y]) => [x + size * 0.32, y + size * 0.54]);
+  drawPolygon(target, shadow, `rgba(0, 0, 0, ${alpha * 0.58})`);
+  drawPolygon(target, [mapped[1], mapped[2], lower[2], lower[1]], `rgba(10, 12, 15, ${alpha * 0.95})`);
+  drawPolygon(target, [mapped[2], mapped[4], lower[4], lower[2]], `rgba(2, 3, 5, ${alpha})`);
+  drawPolygon(target, [mapped[4], mapped[6], lower[6], lower[4]], `rgba(24, 28, 32, ${alpha * 0.76})`);
+  const glow = target.createLinearGradient(cx - size, cy - size, cx + size, cy + size);
+  glow.addColorStop(0, `rgba(235, 239, 240, ${alpha * 0.82})`);
+  glow.addColorStop(0.24, `rgba(55, 60, 66, ${alpha * 1.12})`);
+  glow.addColorStop(0.6, `rgba(9, 10, 13, ${alpha * 1.32})`);
+  glow.addColorStop(1, `rgba(0, 0, 0, ${alpha * 1.5})`);
+  drawPolygon(target, mapped, glow, `rgba(250, 250, 246, ${alpha * 0.34})`, 1.1);
+
+  drawPolygon(target, [mapped[0], mapped[1], [cx + size * 0.05, cy - size * 0.08]], `rgba(250,250,246,${alpha * 0.6})`);
+  drawPolygon(target, [mapped[1], mapped[2], mapped[3], [cx + size * 0.08, cy + size * 0.1]], `rgba(210,213,213,${alpha * 0.34})`);
+  drawPolygon(target, [mapped[5], mapped[6], [cx - size * 0.1, cy + size * 0.16]], `rgba(92,96,100,${alpha * 0.38})`);
+
+  target.save();
+  target.globalAlpha = alpha * 0.82;
+  target.strokeStyle = "#f6f3eb";
+  target.lineWidth = 1.2;
+  target.beginPath();
+  target.moveTo(mapped[0][0], mapped[0][1]);
+  target.lineTo(cx, cy + size * 0.18);
+  target.lineTo(mapped[3][0], mapped[3][1]);
+  target.stroke();
+  target.restore();
+}
+
+function drawOriginiumCluster(target, cx, cy, scale = 1, alpha = 0.34) {
+  target.save();
+  target.globalAlpha = alpha * 0.7;
+  target.fillStyle = "rgba(3, 14, 21, 0.42)";
+  target.beginPath();
+  target.ellipse(cx + 18 * scale, cy + 44 * scale, 96 * scale, 26 * scale, -0.12, 0, Math.PI * 2);
+  target.fill();
+  target.restore();
+
+  [
+    [-48, 12, 36, -0.42, 0.8],
+    [-8, -16, 58, 0.05, 1],
+    [34, 6, 38, 0.5, 0.82],
+    [4, 34, 28, -0.1, 0.66],
+    [62, 34, 22, 0.24, 0.58],
+    [-76, 34, 18, -0.58, 0.54],
+  ].forEach(([dx, dy, size, rotation, weight]) => {
+    drawOriginiumShard(target, cx + dx * scale, cy + dy * scale, size * scale, rotation, alpha * weight);
+  });
+
+  const coreSize = 12 * scale;
+  const core = [
+    [cx, cy - coreSize],
+    [cx + coreSize, cy],
+    [cx, cy + coreSize],
+    [cx - coreSize, cy],
+  ];
+  const coreGlow = target.createRadialGradient(cx, cy, 1, cx, cy, coreSize * 2.4);
+  coreGlow.addColorStop(0, `rgba(255, 235, 214, ${alpha})`);
+  coreGlow.addColorStop(0.34, `rgba(119, 23, 20, ${alpha * 0.9})`);
+  coreGlow.addColorStop(1, "rgba(119, 23, 20, 0)");
+  target.fillStyle = coreGlow;
+  target.beginPath();
+  target.arc(cx, cy, coreSize * 2.4, 0, Math.PI * 2);
+  target.fill();
+  drawPolygon(target, core, `rgba(60, 12, 12, ${alpha * 1.05})`, `rgba(250, 244, 235, ${alpha * 0.9})`, 2);
+}
+
+function drawFloatingPrism(target, cx, cy, width, height, depth, color, alpha = 0.24) {
+  const top = [
+    [cx, cy - height / 2],
+    [cx + width / 2, cy],
+    [cx, cy + height / 2],
+    [cx - width / 2, cy],
+  ];
+  const bottom = top.map(([x, y]) => [x + depth * 0.58, y + depth]);
+  target.save();
+  target.globalAlpha = alpha;
+  target.shadowColor = "rgba(5, 16, 24, 0.7)";
+  target.shadowBlur = 18;
+  target.shadowOffsetX = 8;
+  target.shadowOffsetY = 14;
+  drawPolygon(target, [top[1], top[2], bottom[2], bottom[1]], shade(color, -52));
+  drawPolygon(target, [top[2], top[3], bottom[3], bottom[2]], shade(color, -38));
+  drawPolygon(target, top, color, "rgba(232, 252, 255, 0.48)", 1.4);
+  target.restore();
+}
+
+function drawTerminalFrame(target, x, y, w, h, alpha = 0.18) {
+  const tick = 34;
+  target.save();
+  target.globalAlpha = alpha;
+  target.strokeStyle = "#d7edf3";
+  target.lineWidth = 2;
+  [
+    [[x, y + tick], [x, y], [x + tick, y]],
+    [[x + w - tick, y], [x + w, y], [x + w, y + tick]],
+    [[x + w, y + h - tick], [x + w, y + h], [x + w - tick, y + h]],
+    [[x + tick, y + h], [x, y + h], [x, y + h - tick]],
+  ].forEach((corner) => {
+    target.beginPath();
+    corner.forEach(([px, py], index) => {
+      if (index === 0) target.moveTo(px, py);
+      else target.lineTo(px, py);
+    });
+    target.stroke();
+  });
+  target.restore();
+}
+
+function drawHazardBand(target, x, y, w, h, alpha = 0.22) {
+  target.save();
+  target.globalAlpha = alpha;
+  target.fillStyle = "#f5c934";
+  target.fillRect(x, y, w, h);
+  target.strokeStyle = "rgba(9, 18, 24, 0.68)";
+  target.lineWidth = h * 0.9;
+  for (let px = x - h * 2; px < x + w + h * 2; px += h * 2.8) {
+    target.beginPath();
+    target.moveTo(px, y + h);
+    target.lineTo(px + h * 1.4, y);
+    target.stroke();
+  }
+  target.restore();
+}
+
 function drawBackground(target) {
-  target.fillStyle = "#547381";
+  const gradient = target.createLinearGradient(0, 0, canvas.width, canvas.height);
+  gradient.addColorStop(0, "#718b96");
+  gradient.addColorStop(0.48, "#4f707e");
+  gradient.addColorStop(1, "#3a5966");
+  target.fillStyle = gradient;
   target.fillRect(0, 0, canvas.width, canvas.height);
+
+  const glow = target.createRadialGradient(
+    canvas.width * 0.58,
+    canvas.height * 0.34,
+    canvas.width * 0.08,
+    canvas.width * 0.58,
+    canvas.height * 0.34,
+    canvas.width * 0.58,
+  );
+  glow.addColorStop(0, "rgba(231, 247, 250, 0.14)");
+  glow.addColorStop(0.54, "rgba(231, 247, 250, 0.05)");
+  glow.addColorStop(1, "rgba(231, 247, 250, 0)");
+  target.fillStyle = glow;
+  target.fillRect(0, 0, canvas.width, canvas.height);
+
+  target.save();
+  target.globalAlpha = 0.12;
+  target.strokeStyle = "#d4eaf0";
+  target.lineWidth = 1.2;
+  for (let x = -canvas.height; x < canvas.width; x += 58) {
+    target.beginPath();
+    target.moveTo(x, canvas.height);
+    target.lineTo(x + canvas.height, 0);
+    target.stroke();
+  }
+  target.restore();
+
+  target.save();
+  target.globalAlpha = 0.22;
+  target.strokeStyle = "#c9e3e9";
+  target.lineWidth = 1.5;
+  for (let y = 88; y < canvas.height; y += 88) {
+    target.beginPath();
+    target.moveTo(0, y);
+    target.lineTo(canvas.width, y);
+    target.stroke();
+  }
+  for (let x = 86; x < canvas.width; x += 118) {
+    target.beginPath();
+    target.moveTo(x, 0);
+    target.lineTo(x, canvas.height);
+    target.stroke();
+  }
+  target.restore();
+
+  drawTerminalFrame(target, 62, 72, 370, 126, 0.2);
+  drawTerminalFrame(target, canvas.width - 430, 72, 320, 112, 0.18);
+  drawOriginiumCluster(target, 142, 154, 0.82, 0.34);
+  drawOriginiumCluster(target, canvas.width - 142, 154, 0.78, 0.32);
+  drawOriginiumCluster(target, 168, canvas.height - 164, 0.78, 0.3);
+  drawOriginiumCluster(target, canvas.width - 170, canvas.height - 158, 0.82, 0.32);
+
+  target.save();
+  target.globalAlpha = 0.16;
+  target.strokeStyle = "#e1f1f5";
+  target.lineWidth = 1.8;
+  target.beginPath();
+  target.arc(canvas.width * 0.72, canvas.height * 0.62, 96, 0, Math.PI * 2);
+  target.stroke();
+  target.beginPath();
+  target.arc(canvas.width * 0.72, canvas.height * 0.62, 58, 0.25, Math.PI * 1.7);
+  target.stroke();
+  target.restore();
+
+  target.save();
+  target.globalAlpha = 0.22;
+  target.fillStyle = "#e8f7fa";
+  target.font = "900 22px Arial, sans-serif";
+  target.fillText("RHODES ISLAND // PRTS", 72, canvas.height - 112);
+  target.font = "800 13px Arial, sans-serif";
+  target.fillText("ORIGINIUM MONITORING FIELD", 72, canvas.height - 132);
+  target.restore();
 }
 
 function tileCenter(row, col) {
@@ -1076,26 +1331,30 @@ function drawLandTile(target, tile, part = "all") {
     gradientTo: "#ffffff",
   };
   const isActive = style.regionKey && activeRegion === style.regionKey;
-  const shineBase = style.kind === "background" ? 0.012 : 0.028;
-  const shine = shineBase + ((tile.row * 2 + tile.col) % 5) * 0.015;
-  const topAlpha = activeRegion && style.regionKey && activeRegion !== style.regionKey
-    ? 0.68
-    : 1;
-  const lift = style.kind === "region" ? 38 * mapLayout.scale : 0;
+  const isUnselectedRegion = activeRegion && style.regionKey && activeRegion !== style.regionKey;
+  const tileColor = isUnselectedRegion ? blendColor(style.color, "#dce8ec", 0.34) : style.color;
+  const tileGradientTo = isUnselectedRegion
+    ? blendColor(style.gradientTo || style.color, "#edf6f8", 0.34)
+    : style.gradientTo;
+  const topAlpha = 1;
+  const lift = 0;
+  const tileDepth = 18 * mapLayout.scale;
+  const sideGrow = 0.1 * mapLayout.scale;
+  const topGrow = 0.58 * mapLayout.scale;
 
   target.save();
-  target.shadowColor = style.kind === "background" ? "rgba(8, 24, 32, 0.08)" : "rgba(8, 27, 38, 0.22)";
-  target.shadowBlur = (isActive ? 18 : style.kind === "background" ? 2 : 13) * mapLayout.scale;
-  target.shadowOffsetX = (style.kind === "background" ? 1 : 8) * mapLayout.scale;
-  target.shadowOffsetY = (style.kind === "background" ? 2 : 10) * mapLayout.scale;
-  drawHexPrism(target, tile.x, tile.y, style.color, {
+  target.shadowColor = part === "sides" ? "rgba(8, 24, 32, 0.14)" : "rgba(0,0,0,0)";
+  target.shadowBlur = part === "sides" ? 4 * mapLayout.scale : 0;
+  target.shadowOffsetX = part === "sides" ? 2 * mapLayout.scale : 0;
+  target.shadowOffsetY = part === "sides" ? 3 * mapLayout.scale : 0;
+  drawHexPrism(target, tile.x, tile.y, tileColor, {
     part,
-    depth: (style.kind === "region" ? 58 : 18) * mapLayout.scale,
+    depth: tileDepth,
     lift,
-    sideGrow: (style.kind === "region" ? 0.35 : 0.18) * mapLayout.scale,
-    topGrow: (style.kind === "region" ? 0.35 : 0.18) * mapLayout.scale,
-    shine,
-    gradientTo: style.gradientTo,
+    sideGrow,
+    topGrow,
+    shine: 0,
+    gradientTo: part === "top" ? null : tileGradientTo,
     topAlpha,
     stroke: null,
     strokeWidth: 0,
@@ -1110,8 +1369,10 @@ function renderTiles(target) {
   const sortedLand = landTiles
     .slice()
     .sort((a, b) => a.y - b.y || a.x - b.x);
-  sortedPerimeter.forEach((tile) => drawPerimeterTile(target, tile, "all"));
-  sortedLand.forEach((tile) => drawLandTile(target, tile, "sides"));
+  sortedPerimeter
+    .filter((tile) => tile.y > canvas.height * 0.54)
+    .forEach((tile) => drawPerimeterTile(target, tile, "all"));
+  sortedLand.filter(nearLandEdge).forEach((tile) => drawLandTile(target, tile, "sides"));
   sortedLand.forEach((tile) => drawLandTile(target, tile, "top"));
 }
 
@@ -1123,7 +1384,6 @@ function drawLabels(target) {
     const lineStep = 20 * mapLayout.scale;
     const lines = region.name.includes(" / ") ? [region.name] : region.name.split("\n");
     target.save();
-    if (activeRegion && region.key !== activeRegion) target.globalAlpha *= 0.55;
     target.textAlign = "center";
     target.textBaseline = "middle";
     target.font = cityLabel

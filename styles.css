@@ -4,6 +4,11 @@
   --panel: rgba(239, 246, 248, 0.96);
   --line: rgba(18, 28, 36, 0.15);
   --accent: #ffd13c;
+  --terra-bg-a: #718b96;
+  --terra-bg-b: #4f707e;
+  --terra-bg-c: #3a5966;
+  --terra-bg: radial-gradient(900px 520px at 58% 22%, rgba(226, 243, 247, 0.16), transparent 62%),
+    linear-gradient(135deg, var(--terra-bg-a) 0%, var(--terra-bg-b) 48%, var(--terra-bg-c) 100%);
 }
 
 * {
@@ -16,7 +21,7 @@ body {
   min-height: 100%;
   overflow-x: hidden;
   color: var(--ink);
-  background: #547381;
+  background: var(--terra-bg);
   font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif;
 }
 
@@ -109,7 +114,7 @@ body {
 #mapView {
   position: relative;
   min-height: 100vh;
-  background: #547381;
+  background: var(--terra-bg);
 }
 
 .map-stage {
@@ -118,16 +123,18 @@ body {
   place-items: center;
   width: 100vw;
   min-height: 100vh;
-  padding: 56px 0 34px;
+  padding: 30px 0 18px;
   overflow: hidden;
-  background: #547381;
+  background: var(--terra-bg);
 }
 
 #terraCanvas {
+  position: relative;
+  z-index: 1;
   display: block;
-  width: min(1780px, 92vw, calc((100vh - 82px) * 2000 / 860));
+  width: min(2000px, 100vw);
   height: auto;
-  background: #547381;
+  background: transparent;
 }
 
 .region-panel {
@@ -279,7 +286,7 @@ h2 {
 #timelineView {
   min-height: 100vh;
   padding: 92px 24px 32px;
-  background: #547381;
+  background: var(--terra-bg);
 }
 
 .timeline-panel {
